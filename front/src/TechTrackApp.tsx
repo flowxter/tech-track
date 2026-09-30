@@ -1,0 +1,220 @@
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
+import {
+  Activity, ArrowRight, Bell, Check, ChevronDown, CircleHelp, ClipboardList,
+  Clock3, Laptop, LogOut, Plus, Search, Settings2, ShieldCheck, X,
+} from 'lucide-react'
+import { api, ApiError } from './api'
+import type { Equipment, Task, TaskStatus, User } from './types'
+import { AuthScreen } from './components/AuthScreen'
+import './TechTrackApp.css'
+
+const statusLabels: Record<TaskStatus, string> = {
+  PENDING: 'Pendiente',
+  IN_PROGRESS: 'En progreso',
+  COMPLETED: 'Completada',
+}
+const statusOrder: TaskStatus[] = ['PENDING', 'IN_PROGRESS', 'COMPLETED']
+
+/** Presenta la consola de tareas y equipos para el técnico autenticado. */
+export default function TechTrackApp() {
+  const [token, setToken] = useState(() => localStorage.getItem('techtrack-token'))
+  const [user, setUser] = useState<User | null>(null)
+  const [tasks, setTasks] = useState<Task[]>([])
+  const [equipment, setEquipment] = useState<Equipment[]>([])
+  const [activeView, setActiveView] = useState<'tasks' | 'equipment'>('tasks')
+  const [statusFilter, setStatusFilter] = useState<'ALL' | TaskStatus>('ALL')
+  const [searchTerm, setSearchTerm] = useState('')
+  const [modal, setModal] = useState<'task' | 'equipment' | null>(null)
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [toast, setToast] = useState('')
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!token) return
+    let cancelled = false
+    setLoading(true)
+    Promise.all([api.me(token), api.listTasks(token), api.listEquipment(token)])
+      .then(([profile, taskList, equipmentList]) => {
+        if (cancelled) return
+        setUser(profile)
+        setTasks(taskList)
+        setEquipment(equipmentList)
+        setError('')
+      })
+      .catch((reason: unknown) => {
+        if (cancelled) return
+        if (reason instanceof ApiError && reason.status === 401) {
+          localStorage.removeItem('techtrack-token')
+          setToken(null)
+          setUser(null)
+        } else {
+          setError(reason instanceof Error ? reason.message : 'No se pudo conectar con el servidor.')
+        }
+      })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [token])
+
+  useEffect(() => {
+    if (!toast) return
+    const timer = window.setTimeout(() => setToast(''), 3200)
+    return () => window.clearTimeout(timer)
+  }, [toast])
+
+  const filteredTasks = useMemo(() => tasks.filter((task) => {
+    const matchesStatus = statusFilter === 'ALL' || task.status === statusFilter
+    const linkedEquipment = getEquipment(task)
+    const matchesSearch = `${task.title} ${linkedEquipment?.name ?? ''} ${task.description}`.toLowerCase().includes(searchTerm.toLowerCase())
+    return matchesStatus && matchesSearch
+  }), [tasks, statusFilter, searchTerm])
+
+  const counts = useMemo(() => ({
+    total: tasks.length,
+    pending: tasks.filter((task) => task.status === 'PENDING').length,
+    progress: tasks.filter((task) => task.status === 'IN_PROGRESS').length,
+    completed: tasks.filter((task) => task.status === 'COMPLETED').length,
+  }), [tasks])
+
+  function handleAuthenticated(nextToken: string, profile: User) {
+    localStorage.setItem('techtrack-token', nextToken)
+    setToken(nextToken)
+    setUser(profile)
+  }
+
+  async function handleLogout() {
+    if (token) await api.logout(token).catch(() => undefined)
+    localStorage.removeItem('techtrack-token')
+    setToken(null)
+    setUser(null)
+    setTasks([])
+    setEquipment([])
+  }
+
+  async function handleStatusChange(task: Task, status: TaskStatus) {
+    try {
+      const updated = await api.updateTaskStatus(token!, task._id, status)
+      setTasks((current) => current.map((item) => item._id === updated._id ? updated : item))
+      setSelectedTask(updated)
+      setToast(`Tarea actualizada a ${statusLabels[status].toLowerCase()}`)
+    } catch (reason) {
+      setToast(reason instanceof Error ? reason.message : 'No se pudo actualizar el estado.')
+    }
+  }
+
+  async function handleCreateEquipment(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const data = new FormData(event.currentTarget)
+    try {
+      const created = await api.createEquipment(token!, {
+        assetTag: String(data.get('assetTag')).trim(),
+        name: String(data.get('name')).trim(),
+        type: String(data.get('type')).trim(),
+        brand: String(data.get('brand')).trim(),
+        model: String(data.get('model')).trim(),
+        serialNumber: String(data.get('serialNumber')).trim(),
+      })
+      setEquipment((current) => [created, ...current])
+      setModal(null)
+      setToast('Equipo registrado correctamente')
+    } catch (reason) {
+      setToast(reason instanceof Error ? reason.message : 'No se pudo registrar el equipo.')
+    }
+  }
+
+  async function handleCreateTask(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const data = new FormData(event.currentTarget)
+    try {
+      const created = await api.createTask(token!, {
+        title: String(data.get('title')).trim(),
+        description: String(data.get('description')).trim(),
+        equipmentId: String(data.get('equipmentId')),
+      })
+      setTasks((current) => [created, ...current])
+      setModal(null)
+      setActiveView('tasks')
+      setToast('Tarea creada y asignada como pendiente')
+    } catch (reason) {
+      setToast(reason instanceof Error ? reason.message : 'No se pudo crear la tarea.')
+    }
+  }
+
+  if (!user) return <AuthScreen onAuthenticated={handleAuthenticated} />
+
+  return <div className="app-shell">
+    <aside className="sidebar">
+      <a className="brand" href="#inicio" aria-label="TechTrack inicio"><span className="brand-mark"><Activity size={19} strokeWidth={2.4} /></span><span>techtrack<span className="brand-period">.</span></span></a>
+      <div className="workspace-label">ESPACIO DE TRABAJO</div>
+      <nav className="main-nav" aria-label="Navegación principal">
+        <button className={activeView === 'tasks' ? 'nav-item active' : 'nav-item'} onClick={() => setActiveView('tasks')}><ClipboardList size={18} /><span>Tareas</span><span className="nav-count">{counts.total}</span></button>
+        <button className={activeView === 'equipment' ? 'nav-item active' : 'nav-item'} onClick={() => setActiveView('equipment')}><Laptop size={18} /><span>Equipos</span><span className="nav-count">{equipment.length}</span></button>
+      </nav>
+      <div className="sidebar-spacer" />
+      <div className="sidebar-note"><div className="note-icon"><ShieldCheck size={17} /></div><strong>Todo bajo control</strong><span>El historial de cada intervención se conserva con su equipo.</span></div>
+      <div className="sidebar-footer"><button className="user-menu" onClick={() => void handleLogout()} title="Cerrar sesión"><span className="avatar">{user.name.slice(0, 1).toUpperCase()}</span><span className="user-copy"><strong>{user.name}</strong><small>{user.role === 'ADMIN' ? 'Administrador' : 'Técnico'}</small></span><LogOut size={16} /></button></div>
+    </aside>
+
+    <main className="main-area">
+      <header className="topbar"><div className="breadcrumbs"><span>TechTrack</span><span className="crumb-divider">/</span><strong>{activeView === 'tasks' ? 'Tareas' : 'Equipos'}</strong></div><div className="topbar-actions"><div className="connection-pill"><span className="connection-dot" /> Sistema operativo</div><button className="icon-button" aria-label="Ayuda" title="Ayuda"><CircleHelp size={18} /></button><button className="icon-button notification-button" aria-label="Notificaciones" title="Notificaciones"><Bell size={18} /><i /></button></div></header>
+      <div className="page-content">
+        {error && <div className="inline-alert"><span>{error}</span><button onClick={() => window.location.reload()} aria-label="Reintentar">Reintentar</button></div>}
+        {activeView === 'tasks' ? <>
+          <div className="page-heading"><div><div className="eyebrow"><span className="eyebrow-line" /> CONTROL DE SERVICIO</div><h1>Panel de tareas</h1><p className="page-description">Una vista clara de lo que requiere atención y del trabajo realizado.</p></div><button className="primary-button" onClick={() => setModal('task')}><Plus size={17} /> Nueva tarea</button></div>
+          <section className="metric-grid" aria-label="Resumen de tareas"><MetricCard label="Tareas registradas" value={counts.total} detail="En tu espacio de trabajo" icon={<ClipboardList size={18} />} tone="mint" /><MetricCard label="Pendientes" value={counts.pending} detail="Por atender" icon={<Clock3 size={18} />} tone="amber" /><MetricCard label="En progreso" value={counts.progress} detail="Intervenciones activas" icon={<Activity size={18} />} tone="blue" /><MetricCard label="Completadas" value={counts.completed} detail="Trabajo documentado" icon={<Check size={18} />} tone="green" /></section>
+          <section className="task-panel"><div className="panel-heading"><div><h2>Actividad técnica</h2><p>Seguimiento de las intervenciones asignadas</p></div><button className="text-button" onClick={() => setActiveView('equipment')}>Ver equipos <ArrowRight size={15} /></button></div>
+            <div className="table-toolbar"><div className="filter-tabs" role="group" aria-label="Filtrar por estado"><button className={statusFilter === 'ALL' ? 'filter-tab selected' : 'filter-tab'} onClick={() => setStatusFilter('ALL')}>Todas <span>{counts.total}</span></button>{statusOrder.map((status) => <button key={status} className={statusFilter === status ? 'filter-tab selected' : 'filter-tab'} onClick={() => setStatusFilter(status)}>{statusLabels[status]}</button>)}</div><label className="search-field"><Search size={16} /><input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Buscar tarea o equipo" aria-label="Buscar tarea o equipo" /></label></div>
+            <div className="task-table-wrap"><table className="task-table"><thead><tr><th>Intervención</th><th>Equipo</th><th>Estado</th><th>Creada</th><th aria-label="Acciones" /></tr></thead><tbody>{filteredTasks.map((task) => { const linkedEquipment = getEquipment(task); return <tr key={task._id} onClick={() => setSelectedTask(task)} className="task-row"><td><div className="task-title-cell"><span className="task-type-icon"><Settings2 size={16} /></span><span><strong>{task.title}</strong><small>{task.description || 'Sin descripción adicional'}</small></span></div></td><td><div className="equipment-cell"><Laptop size={15} /><span>{linkedEquipment?.name ?? 'Equipo'}</span><small>{linkedEquipment?.assetTag ?? ''}</small></div></td><td onClick={(event) => event.stopPropagation()}><StatusSelect value={task.status} onChange={(status) => void handleStatusChange(task, status)} /></td><td className="date-cell">{formatDate(task.createdAt)}</td><td><button className="row-arrow" aria-label={`Ver ${task.title}`} onClick={() => setSelectedTask(task)}><ArrowRight size={16} /></button></td></tr> })}</tbody></table>
+              {loading && <div className="empty-state"><span className="loader" /> Cargando tareas...</div>}
+              {!loading && filteredTasks.length === 0 && <div className="empty-state"><span className="empty-icon"><ClipboardList size={21} /></span><strong>{tasks.length === 0 ? 'Tu lista está lista para empezar' : 'No encontramos resultados'}</strong><span>{tasks.length === 0 ? 'Registra un equipo y crea tu primera tarea técnica.' : 'Prueba otra búsqueda o cambia el filtro.'}</span>{tasks.length === 0 && <button className="text-button" onClick={() => setModal('task')}>Crear primera tarea <ArrowRight size={15} /></button>}</div>}
+            </div><div className="panel-footnote"><span><ShieldCheck size={14} /> Tus tareas solo son visibles para tu cuenta</span><span>{filteredTasks.length} {filteredTasks.length === 1 ? 'registro' : 'registros'}</span></div>
+          </section>
+        </> : <>
+          <div className="page-heading"><div><div className="eyebrow"><span className="eyebrow-line" /> INVENTARIO TÉCNICO</div><h1>Equipos</h1><p className="page-description">Activos bajo seguimiento y su información de identificación.</p></div><button className="primary-button" onClick={() => setModal('equipment')}><Plus size={17} /> Registrar equipo</button></div>
+          <section className="equipment-section"><div className="equipment-toolbar"><div><strong>{equipment.length} equipos</strong><span> registrados en tu espacio</span></div><label className="search-field"><Search size={16} /><input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Buscar equipo" aria-label="Buscar equipo" /></label></div>
+            {visibleEquipment(equipment, searchTerm).length > 0 ? <div className="equipment-grid">{visibleEquipment(equipment, searchTerm).map((item) => <article className="equipment-card" key={item._id}><div className="equipment-card-top"><span className="equipment-icon"><Laptop size={20} /></span><span className="asset-tag">{item.assetTag}</span></div><h3>{item.name}</h3><p>{item.brand} {item.model}</p><div className="equipment-meta"><span>{item.type}</span><span>Serie {item.serialNumber || 'Sin registrar'}</span></div><button className="equipment-history" onClick={() => { setActiveView('tasks'); setSearchTerm(item.name) }}>Ver tareas asociadas <ArrowRight size={15} /></button></article>)}</div> : <div className="empty-state equipment-empty"><span className="empty-icon"><Laptop size={21} /></span><strong>{equipment.length ? 'No encontramos ese equipo' : 'Aún no hay equipos registrados'}</strong><span>Registra los activos para vincularlos con las intervenciones técnicas.</span>{!equipment.length && <button className="primary-button" onClick={() => setModal('equipment')}><Plus size={16} /> Registrar primer equipo</button>}</div>}
+          </section>
+        </>}
+        <footer className="page-footer"><span>TECHTRACK <span className="brand-period">/</span> TRAZABILIDAD TÉCNICA</span><span>Una intervención a la vez, con todo su contexto.</span></footer>
+      </div>
+    </main>
+
+    {modal && <Modal title={modal === 'task' ? 'Nueva tarea técnica' : 'Registrar equipo'} onClose={() => setModal(null)}>
+      {modal === 'task' ? <form className="dialog-form" onSubmit={(event) => void handleCreateTask(event)}><div className="form-intro"><span className="dialog-icon"><ClipboardList size={18} /></span><div><strong>Define la intervención</strong><span>La tarea se creará con estado pendiente.</span></div></div><label>Título de la tarea<input name="title" required maxLength={120} placeholder="Ej. Diagnóstico de equipo" /></label><label>Equipo asociado<select name="equipmentId" required defaultValue=""><option value="" disabled>Selecciona un equipo</option>{equipment.map((item) => <option key={item._id} value={item._id}>{item.assetTag} · {item.name}</option>)}</select></label><label>Descripción del problema<textarea name="description" rows={3} placeholder="Describe brevemente el trabajo solicitado" /></label>{equipment.length === 0 && <div className="form-warning"><Laptop size={16} /> Primero registra un equipo para poder asociarlo a una tarea.</div>}<div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setModal(null)}>Cancelar</button><button type="submit" className="primary-button" disabled={equipment.length === 0}><Plus size={16} /> Crear tarea</button></div></form> : <form className="dialog-form" onSubmit={(event) => void handleCreateEquipment(event)}><div className="form-intro"><span className="dialog-icon"><Laptop size={18} /></span><div><strong>Identifica el activo</strong><span>Completa los datos para facilitar su seguimiento.</span></div></div><div className="form-grid"><label>Identificador<input name="assetTag" required maxLength={40} placeholder="Ej. PC-001" /></label><label>Tipo<input name="type" required maxLength={60} placeholder="Laptop, servidor..." /></label></div><label>Nombre o descripción<input name="name" required maxLength={120} placeholder="Ej. Laptop de recepción" /></label><div className="form-grid"><label>Marca<input name="brand" required maxLength={60} placeholder="Ej. Lenovo" /></label><label>Modelo<input name="model" required maxLength={80} placeholder="Ej. ThinkPad E14" /></label></div><label>Número de serie<input name="serialNumber" required maxLength={100} placeholder="Número de serie del fabricante" /></label><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setModal(null)}>Cancelar</button><button type="submit" className="primary-button"><Plus size={16} /> Guardar equipo</button></div></form>}
+    </Modal>}
+
+    {selectedTask && <Modal title="Detalle de intervención" onClose={() => setSelectedTask(null)} wide><div className="detail-content"><div className="detail-title"><span className="task-type-icon large"><Settings2 size={19} /></span><div><div className="eyebrow">{getEquipment(selectedTask)?.assetTag ?? 'TAREA TÉCNICA'}</div><h3>{selectedTask.title}</h3></div></div><div className="detail-meta"><span><Laptop size={15} /> {getEquipment(selectedTask)?.name ?? 'Equipo asociado'}</span><span><Clock3 size={15} /> Creada el {formatDate(selectedTask.createdAt)}</span></div><div className="detail-status"><span>Estado actual</span><StatusSelect value={selectedTask.status} onChange={(status) => void handleStatusChange(selectedTask, status)} /></div><div className="detail-description"><strong>Descripción reportada</strong><p>{selectedTask.description || 'No se agregó descripción para esta tarea.'}</p></div><div className="detail-next-step"><ShieldCheck size={18} /><span>Diagnóstico, actividades, resultado y evidencias se podrán documentar aquí en el módulo de trazabilidad.</span></div></div></Modal>}
+    {toast && <div className="toast" role="status"><span className="toast-check"><Check size={14} /></span>{toast}<button onClick={() => setToast('')} aria-label="Cerrar mensaje"><X size={15} /></button></div>}
+  </div>
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value))
+}
+
+function getEquipment(task: Task) {
+  return typeof task.equipment === 'string' ? null : task.equipment
+}
+
+function visibleEquipment(items: Equipment[], query: string) {
+  const normalizedQuery = query.toLowerCase()
+  return items.filter((item) => `${item.name} ${item.assetTag} ${item.brand} ${item.model}`.toLowerCase().includes(normalizedQuery))
+}
+
+function MetricCard({ label, value, detail, icon, tone }: { label: string; value: number; detail: string; icon: ReactNode; tone: string }) {
+  return <article className="metric-card"><span className={`metric-icon ${tone}`}>{icon}</span><div className="metric-label">{label}</div><div className="metric-value">{value}</div><div className="metric-detail">{detail}</div></article>
+}
+
+function StatusSelect({ value, onChange }: { value: TaskStatus; onChange: (status: TaskStatus) => void }) {
+  const validOptions = value === 'PENDING' ? ['PENDING', 'IN_PROGRESS'] as TaskStatus[] : value === 'IN_PROGRESS' ? ['IN_PROGRESS', 'COMPLETED'] as TaskStatus[] : ['COMPLETED'] as TaskStatus[]
+  return <span className={`status-wrap status-${value.toLowerCase()}`}><span className="status-dot" /><select aria-label="Cambiar estado de tarea" value={value} onChange={(event) => onChange(event.target.value as TaskStatus)}>{validOptions.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select><ChevronDown size={13} /></span>
+}
+
+function Modal({ title, onClose, wide = false, children }: { title: string; onClose: () => void; wide?: boolean; children: ReactNode }) {
+  useEffect(() => {
+    function handleKeydown(event: KeyboardEvent) { if (event.key === 'Escape') onClose() }
+    window.addEventListener('keydown', handleKeydown)
+    return () => window.removeEventListener('keydown', handleKeydown)
+  }, [onClose])
+  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><section className={`modal ${wide ? 'modal-wide' : ''}`} role="dialog" aria-modal="true" aria-label={title}><header className="modal-header"><strong>{title}</strong><button className="icon-button" onClick={onClose} aria-label="Cerrar"><X size={18} /></button></header>{children}</section></div>
+}
