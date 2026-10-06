@@ -8,7 +8,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "seed:test-user": "tsx src/scripts/seedTestUser.ts",
-    "test": "tsx --test src/modules/tasks/task-status.test.ts"
+    "test": "tsx --test src/modules/tasks/task-status.test.ts src/modules/tasks/evidence-validation.test.ts"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
@@ -19,6 +19,8 @@
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.12.1",
+    "multer": "^2.4.0",
+    "sharp": "^0.35.5",
     "zod": "^3.24.2"
   },
   "devDependencies": {
@@ -26,6 +28,7 @@
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.1",
     "@types/jsonwebtoken": "^9.0.9",
+    "@types/multer": "^2.3.0",
     "@types/node": "^22.13.10",
     "tsx": "^4.19.3",
     "typescript": "^5.8.2"

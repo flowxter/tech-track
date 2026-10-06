@@ -62,7 +62,7 @@ No guardes el `.env` ni credenciales reales en el repositorio. El archivo `.env.
 
 ## Flujo implementado
 
-El incremento inicial cubre el flujo del Sprint 1: registro, inicio/cierre de sesión, alta/listado de equipos, creación/listado de tareas asociadas, filtros y avance de estado. Los técnicos solo consultan sus propios registros. El modelo también conserva transiciones de estado y contiene campos para ampliar la documentación técnica.
+El Sprint 1 cubre registro, inicio/cierre de sesión, equipos, tareas y transiciones de estado. El Sprint 2 completa la documentación de las intervenciones, sus evidencias, el historial por equipo y la consulta administrativa. Los técnicos solo consultan tareas y equipos de su cuenta; la supervisión requiere rol `ADMIN`.
 
 | Historia | Estado de esta base |
 | --- | --- |
@@ -72,11 +72,11 @@ El incremento inicial cubre el flujo del Sprint 1: registro, inicio/cierre de se
 | HU-04 Crear tarea | Equipo requerido, fecha automática y estado Pendiente |
 | HU-05 Consultar tareas | Listado propio, estado visible, búsqueda y estado vacío |
 | HU-06 Cambiar estado | Pendiente → En progreso → Completada; validación en cliente y servidor |
-| HU-07/08 Documentación | Campos y endpoint de actualización preparados en la API; falta el formulario de edición en la interfaz |
-| HU-09 Evidencias | Pendiente: carga, almacenamiento y validación de imágenes |
-| HU-10 Detalle completo | Endpoint de detalle disponible; falta integrar toda la documentación/evidencia en la vista |
-| HU-11 Historial de equipo | Pendiente: endpoint y vista de historial |
-| HU-12 Supervisión | El rol está modelado; falta el alta administrativa y el módulo de consulta |
+| HU-07/08 Documentación | Edición de problema, diagnóstico, actividades, resultado y recomendaciones; bloqueada al completar la tarea |
+| HU-09 Evidencias | JPG, PNG y WEBP; máximo 5 MB; firma y decodificación validadas, persistencia en MongoDB y lectura autenticada |
+| HU-10 Detalle completo | Detalle autorizado con equipo, estado, fechas, documentación y galería de evidencias |
+| HU-11 Historial de equipo | Consulta por equipo ordenada por última actualización, con acceso al detalle de cada tarea |
+| HU-12 Supervisión | Listado global de actividades limitado al rol `ADMIN` |
 
 ## API inicial
 
@@ -94,6 +94,12 @@ Todas las rutas salvo salud, registro y login requieren `Authorization: Bearer <
 | GET | `/api/tasks/:id` | Consultar detalle autorizado |
 | PATCH | `/api/tasks/:id/status` | Avanzar el estado de la tarea |
 | PATCH | `/api/tasks/:id/documentation` | Guardar documentación técnica |
+| POST | `/api/tasks/:id/evidence` | Adjuntar una imagen JPG, PNG o WEBP (máximo 5 MB) como campo multipart `image` |
+| GET | `/api/tasks/:id/evidence/:evidenceId/content` | Leer una evidencia con autenticación |
+| GET | `/api/equipment/:id/history` | Consultar intervenciones propias asociadas al equipo |
+| GET | `/api/admin/activities` | Consultar actividades; requiere rol `ADMIN` |
+
+Las imágenes se guardan como binario en MongoDB y no se sirven desde una ruta pública. Para probar la vista administrativa localmente, el script `npm run seed:test-user --prefix back` admite `TEST_USER_ROLE=ADMIN`; por defecto crea un técnico. Define `TEST_USER_PASSWORD` solo en el `.env` local y no habilites este mecanismo como ruta pública.
 
 El cierre incrementa la versión de token del usuario y, por tanto, revoca todas sus sesiones existentes. El token de acceso se guarda en el navegador para este MVP; antes de producción conviene migrar a cookies `HttpOnly`/`Secure` y añadir protección CSRF.
 
@@ -105,4 +111,4 @@ npm run build --prefix back
 npm test --prefix back
 ```
 
-Las pruebas unitarias iniciales cubren transiciones válidas e inválidas de estado. Para QA de integración, ejecutar el flujo con MongoDB disponible y probar además duplicidad de correo/identificador, rutas privadas, propiedad de equipos y persistencia tras recargar.
+Las pruebas unitarias cubren transiciones de estado y firmas de imágenes permitidas/rechazadas. Para QA de integración, ejecutar el flujo con MongoDB disponible y comprobar guardado y recarga, carga múltiple, archivo sobredimensionado/corrupto, aislamiento entre cuentas, historial vacío y acceso técnico frente a administrativo.

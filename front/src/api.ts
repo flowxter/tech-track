@@ -1,4 +1,4 @@
-import type { AuthResult, Equipment, Task, TaskStatus, User } from './types'
+import type { AdminActivity, AuthResult, Equipment, Task, TaskStatus, User } from './types'
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000/api'
 
@@ -32,11 +32,30 @@ export const api = {
   me: async (token: string) => (await request<{ user: User }>('/auth/me', {}, token)).user,
   logout: (token: string) => request<{ message: string }>('/auth/logout', { method: 'POST' }, token),
   listTasks: (token: string) => request<{ tasks: Task[] }>('/tasks', {}, token).then(({ tasks }) => tasks),
+  getTask: (token: string, id: string) => request<{ task: Task }>(`/tasks/${id}`, {}, token).then(({ task }) => task),
+  getEvidenceImage: async (token: string, path: string) => {
+    const response = await fetch(`${API_URL}${path}`, { headers: { Authorization: `Bearer ${token}` } })
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({})) as { message?: string }
+      throw new ApiError(payload.message ?? 'No se pudo cargar la evidencia.', response.status)
+    }
+    return response.blob()
+  },
+  evidenceUrl: (path: string) => `${API_URL}${path}`,
+  uploadEvidence: (token: string, id: string, image: File) => {
+    const body = new FormData()
+    body.append('image', image)
+    return request<{ message: string; task: Task }>(`/tasks/${id}/evidence`, { method: 'POST', body }, token)
+  },
   createTask: (token: string, data: { title: string; description: string; equipmentId: string }) =>
     request<{ task: Task }>('/tasks', { method: 'POST', body: JSON.stringify(data) }, token).then(({ task }) => task),
+  updateTaskDocumentation: (token: string, id: string, data: Pick<Task, 'problemReported' | 'diagnosis' | 'activities' | 'result' | 'recommendations'>) =>
+    request<{ message: string; task: Task }>(`/tasks/${id}/documentation`, { method: 'PATCH', body: JSON.stringify(data) }, token),
   updateTaskStatus: (token: string, id: string, status: TaskStatus) =>
     request<{ task: Task }>(`/tasks/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }, token).then(({ task }) => task),
   listEquipment: (token: string) => request<{ equipment: Equipment[] }>('/equipment', {}, token).then(({ equipment }) => equipment),
+  getEquipmentHistory: (token: string, id: string) => request<{ equipment: Equipment; tasks: Task[] }>(`/equipment/${id}/history`, {}, token),
+  listAdminActivities: (token: string) => request<{ activities: AdminActivity[] }>('/admin/activities', {}, token).then(({ activities }) => activities),
   createEquipment: (token: string, data: Omit<Equipment, '_id' | 'createdAt'>) =>
     request<{ equipment: Equipment }>('/equipment', { method: 'POST', body: JSON.stringify(data) }, token).then(({ equipment }) => equipment),
 }

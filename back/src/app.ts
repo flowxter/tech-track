@@ -5,6 +5,7 @@ import { ZodError } from 'zod'
 import { env } from './config/env'
 import { UserModel } from './models/User'
 import authRoutes from './modules/auth/auth.routes'
+import adminRoutes from './modules/admin/admin.routes'
 import equipmentRoutes from './modules/equipment/equipment.routes'
 import taskRoutes from './modules/tasks/task.routes'
 import { HttpError } from './utils/HttpError'
@@ -17,6 +18,7 @@ app.use(express.json({ limit: '1mb' }))
 
 app.get('/api/health', (_request, response) => response.json({ status: 'ok', database: 'connected' }))
 app.use('/api/auth', authRoutes)
+app.use('/api/admin', adminRoutes)
 app.use('/api/equipment', equipmentRoutes)
 app.use('/api/tasks', taskRoutes)
 

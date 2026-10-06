@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { requireAuth } from '../../middleware/requireAuth'
 import { EquipmentModel } from '../../models/Equipment'
+import { TaskModel } from '../../models/Task'
 import { HttpError } from '../../utils/HttpError'
 import { asyncHandler } from '../../utils/asyncHandler'
 
@@ -20,6 +21,18 @@ router.use(requireAuth)
 router.get('/', asyncHandler(async (request, response) => {
   const equipment = await EquipmentModel.find({ owner: request.authUser!.id }).sort({ createdAt: -1 }).lean()
   response.json({ equipment })
+}))
+
+router.get('/:id/history', asyncHandler(async (request, response) => {
+  const equipment = await EquipmentModel.findOne({ _id: request.params.id, owner: request.authUser!.id })
+    .select('assetTag name type brand model serialNumber')
+    .lean()
+  if (!equipment) throw new HttpError(404, 'No se encontró el equipo solicitado.')
+  const tasks = await TaskModel.find({ equipment: equipment._id, owner: request.authUser!.id })
+    .populate('equipment', 'assetTag name type brand model serialNumber')
+    .sort({ updatedAt: -1, createdAt: -1 })
+    .lean()
+  response.json({ equipment, tasks })
 }))
 
 router.post('/', asyncHandler(async (request, response) => {
