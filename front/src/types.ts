@@ -45,5 +45,6 @@ export type TaskEvidence = {
 }
 
 export type AdminActivity = Task & { owner: Pick<User, '_id' | 'name' | 'email'> }
+export type AdminEquipment = Equipment & { owner: string }
 
 export type AuthResult = { token: string; user: User }

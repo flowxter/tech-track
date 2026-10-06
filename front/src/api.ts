@@ -1,4 +1,4 @@
-import type { AdminActivity, AuthResult, Equipment, Task, TaskStatus, User } from './types'
+import type { AdminActivity, AdminEquipment, AuthResult, Equipment, Task, TaskStatus, User } from './types'
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000/api'
 
@@ -56,6 +56,10 @@ export const api = {
   listEquipment: (token: string) => request<{ equipment: Equipment[] }>('/equipment', {}, token).then(({ equipment }) => equipment),
   getEquipmentHistory: (token: string, id: string) => request<{ equipment: Equipment; tasks: Task[] }>(`/equipment/${id}/history`, {}, token),
   listAdminActivities: (token: string) => request<{ activities: AdminActivity[] }>('/admin/activities', {}, token).then(({ activities }) => activities),
+  getAdminTechnicians: (token: string) => request<{ technicians: User[]; equipment: AdminEquipment[] }>('/admin/technicians', {}, token),
+  createAssignedTask: (token: string, data: { title: string; description: string; technicianId: string; equipmentId: string }) =>
+    request<{ message: string; task: AdminActivity }>('/admin/tasks', { method: 'POST', body: JSON.stringify(data) }, token),
+  getAdminTask: (token: string, id: string) => request<{ task: AdminActivity }>(`/admin/tasks/${id}`, {}, token).then(({ task }) => task),
   createEquipment: (token: string, data: Omit<Equipment, '_id' | 'createdAt'>) =>
     request<{ equipment: Equipment }>('/equipment', { method: 'POST', body: JSON.stringify(data) }, token).then(({ equipment }) => equipment),
 }

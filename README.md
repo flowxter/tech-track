@@ -76,7 +76,7 @@ El Sprint 1 cubre registro, inicio/cierre de sesión, equipos, tareas y transici
 | HU-09 Evidencias | JPG, PNG y WEBP; máximo 5 MB; firma y decodificación validadas, persistencia en MongoDB y lectura autenticada |
 | HU-10 Detalle completo | Detalle autorizado con equipo, estado, fechas, documentación y galería de evidencias |
 | HU-11 Historial de equipo | Consulta por equipo ordenada por última actualización, con acceso al detalle de cada tarea |
-| HU-12 Supervisión | Listado global de actividades limitado al rol `ADMIN` |
+| HU-12 Supervisión | Revisión global de tareas y documentos, evidencia autenticada y asignación de tareas a técnicos; limitado al rol `ADMIN` |
 
 ## API inicial
 
@@ -97,7 +97,11 @@ Todas las rutas salvo salud, registro y login requieren `Authorization: Bearer <
 | POST | `/api/tasks/:id/evidence` | Adjuntar una imagen JPG, PNG o WEBP (máximo 5 MB) como campo multipart `image` |
 | GET | `/api/tasks/:id/evidence/:evidenceId/content` | Leer una evidencia con autenticación |
 | GET | `/api/equipment/:id/history` | Consultar intervenciones propias asociadas al equipo |
+| GET | `/api/admin/technicians` | Consultar técnicos y equipos disponibles para asignación; requiere rol `ADMIN` |
 | GET | `/api/admin/activities` | Consultar actividades; requiere rol `ADMIN` |
+| POST | `/api/admin/tasks` | Crear y asignar una tarea a un técnico con un equipo de su inventario; requiere rol `ADMIN` |
+| GET | `/api/admin/tasks/:id` | Revisar documentación, estado e imágenes de cualquier tarea; requiere rol `ADMIN` |
+| GET | `/api/admin/tasks/:taskId/evidence/:evidenceId/content` | Leer evidencia desde la revisión administrativa autenticada |
 
 Las imágenes se guardan como binario en MongoDB y no se sirven desde una ruta pública. Para probar la vista administrativa localmente, el script `npm run seed:test-user --prefix back` admite `TEST_USER_ROLE=ADMIN`; por defecto crea un técnico. Define `TEST_USER_PASSWORD` solo en el `.env` local y no habilites este mecanismo como ruta pública.
 

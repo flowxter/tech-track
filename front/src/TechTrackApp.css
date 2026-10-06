@@ -229,12 +229,31 @@ h1, h2, h3, p { margin-top: 0; }
 .history-status.status-completed { color: #4b805a; background: #eef6ed; }
 .history-empty { min-height: 250px; border: 1px solid #e6ece7; border-radius: 7px; background: #fff; }
 .activity-count { color: #738179; font-size: 10px; }
+.admin-assignment { margin-bottom: 16px; overflow: hidden; border: 1px solid #e6ece7; border-radius: 7px; background: #fff; }
+.admin-assignment-form { padding: 16px 19px; display: grid; gap: 12px; }
+.admin-assignment-form label { min-width: 0; display: grid; gap: 6px; color: #596d60; font-size: 9px; font-weight: 600; }
+.admin-assignment-form input, .admin-assignment-form textarea, .admin-assignment-form select { width: 100%; min-height: 35px; padding: 8px 10px; border: 1px solid #dfe7e0; border-radius: 5px; outline: 0; color: #344a3d; background: #fff; font-size: 10px; font-weight: 400; }
+.admin-assignment-form textarea { resize: vertical; }
+.admin-assignment-form input:focus, .admin-assignment-form textarea:focus, .admin-assignment-form select:focus { border-color: #9dbfac; box-shadow: 0 0 0 3px rgba(75,135,105,.08); }
+.assignment-hint { margin-right: auto; align-self: center; color: #89968e; font-size: 9px; }
 .admin-activity-list { min-height: 180px; }
-.admin-activity-row { min-height: 59px; padding: 10px 17px; display: grid; grid-template-columns: 30px minmax(0, 1fr) auto auto; align-items: center; gap: 12px; border-bottom: 1px solid #edf0ed; }
+.admin-activity-row { min-height: 59px; padding: 10px 17px; display: grid; grid-template-columns: 30px minmax(0, 1fr) auto auto auto; align-items: center; gap: 12px; border-bottom: 1px solid #edf0ed; }
 .admin-activity-row:last-child { border-bottom: 0; }
 .admin-activity-main { min-width: 0; display: grid; gap: 5px; }
 .admin-activity-main strong { overflow: hidden; color: #3b5044; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .admin-activity-main small, .admin-activity-row time { color: #89968e; font-size: 9px; }
+.admin-review-button { min-height: 29px; padding: 0 8px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid #dce6de; border-radius: 5px; color: #47745a; background: #f8fbf8; font-size: 9px; }
+.admin-review-button:hover { background: #edf5ee; }
+.admin-review-status { margin-top: 17px; display: flex; justify-content: space-between; align-items: center; color: #6f8075; font-size: 10px; }
+.admin-review-fields { margin-top: 19px; display: grid; gap: 12px; }
+.admin-readonly-field { padding-bottom: 11px; border-bottom: 1px solid #edf0ed; }
+.admin-readonly-field strong, .admin-review-timeline > strong { color: #506459; font-size: 10px; }
+.admin-readonly-field p { margin: 6px 0 0; color: #77867c; font-size: 10px; line-height: 1.6; white-space: pre-wrap; }
+.admin-review-timeline { margin-top: 17px; }
+.admin-review-timeline ol { margin: 10px 0 0; padding-left: 18px; display: grid; gap: 9px; }
+.admin-review-timeline li { padding-left: 2px; display: flex; align-items: center; gap: 10px; color: #829087; font-size: 9px; }
+.admin-review-timeline time { margin-left: auto; }
+.admin-review-timeline > p { margin: 8px 0 0; color: #89968e; font-size: 9px; }
 .toast { position: fixed; z-index: 30; right: 24px; bottom: 24px; max-width: min(420px, calc(100vw - 32px)); padding: 12px 13px; display: flex; align-items: center; gap: 9px; border: 1px solid #dce9df; border-radius: 6px; color: #45604f; background: rgba(255,255,255,.93); box-shadow: 0 9px 28px rgba(36,65,48,.12); backdrop-filter: blur(12px); font-size: 10px; animation: lift-in .2s ease-out; }
 .toast-check { width: 19px; height: 19px; display: grid; place-items: center; border-radius: 50%; color: #fff; background: #55906c; }
 .toast button { margin-left: 7px; padding: 3px; display: grid; place-items: center; border: 0; color: #8b9990; background: transparent; }
@@ -368,6 +387,9 @@ h1, h2, h3, p { margin-top: 0; }
   .history-entry-meta { grid-column: 2; justify-content: space-between; }
   .admin-activity-row { grid-template-columns: 28px minmax(0, 1fr) auto; gap: 8px; }
   .admin-activity-row time { grid-column: 2 / -1; }
+  .admin-review-button { grid-column: 3; grid-row: 2; }
+  .admin-assignment-form { padding: 13px 11px; }
+  .admin-assignment-form .form-grid { grid-template-columns: 1fr; }
   .evidence-heading { align-items: flex-start; }
   .toast { right: 12px; bottom: 12px; }
 }

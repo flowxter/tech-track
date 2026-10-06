@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react'
 import {
   Activity, ArrowRight, Bell, Check, ChevronDown, CircleHelp, ClipboardCheck, ClipboardList,
-  Clock3, History, ImagePlus, Laptop, LogOut, Plus, Search, Settings2, ShieldCheck, X,
+  Clock3, Eye, History, ImagePlus, Laptop, LogOut, Plus, Search, Settings2, ShieldCheck, X,
 } from 'lucide-react'
 import { api, ApiError } from './api'
-import type { AdminActivity, Equipment, Task, TaskEvidence, TaskStatus, User } from './types'
+import type { AdminActivity, AdminEquipment, Equipment, Task, TaskEvidence, TaskStatus, User } from './types'
 import { AuthScreen } from './components/AuthScreen'
 import './TechTrackApp.css'
 
@@ -29,6 +29,10 @@ export default function TechTrackApp() {
   const [historyEquipment, setHistoryEquipment] = useState<Equipment | null>(null)
   const [historyTasks, setHistoryTasks] = useState<Task[]>([])
   const [adminActivities, setAdminActivities] = useState<AdminActivity[]>([])
+  const [adminTechnicians, setAdminTechnicians] = useState<User[]>([])
+  const [adminEquipment, setAdminEquipment] = useState<AdminEquipment[]>([])
+  const [selectedTechnicianId, setSelectedTechnicianId] = useState('')
+  const [adminReviewedTask, setAdminReviewedTask] = useState<AdminActivity | null>(null)
   const [uploadingEvidence, setUploadingEvidence] = useState(false)
   const [loading, setLoading] = useState(() => Boolean(token))
   const [toast, setToast] = useState('')
@@ -107,8 +111,13 @@ export default function TechTrackApp() {
   }
 
   async function handleSelectTask(task: Task) {
-    setSelectedTask(task)
     try {
+      if (user?.role === 'ADMIN') {
+        const detailedTask = await api.getAdminTask(token!, task._id)
+        setAdminReviewedTask(detailedTask)
+        return
+      }
+      setSelectedTask(task)
       const detailedTask = await api.getTask(token!, task._id)
       setSelectedTask(detailedTask)
     } catch (reason) {
@@ -130,9 +139,34 @@ export default function TechTrackApp() {
   async function handleOpenSupervision() {
     setActiveView('supervision')
     try {
-      setAdminActivities(await api.listAdminActivities(token!))
+      const [activities, options] = await Promise.all([api.listAdminActivities(token!), api.getAdminTechnicians(token!)])
+      setAdminActivities(activities)
+      setAdminTechnicians(options.technicians)
+      setAdminEquipment(options.equipment)
+      if (!options.technicians.some((technician) => technician._id === selectedTechnicianId)) {
+        setSelectedTechnicianId(options.technicians[0]?._id ?? '')
+      }
     } catch (reason) {
       setToast(reason instanceof Error ? reason.message : 'No se pudieron cargar las actividades.')
+    }
+  }
+
+  async function handleCreateAssignment(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const form = event.currentTarget
+    const data = new FormData(form)
+    try {
+      const result = await api.createAssignedTask(token!, {
+        title: String(data.get('title')).trim(),
+        description: String(data.get('description')).trim(),
+        technicianId: String(data.get('technicianId')),
+        equipmentId: String(data.get('equipmentId')),
+      })
+      setAdminActivities((current) => [result.task, ...current])
+      form.reset()
+      setToast(result.message)
+    } catch (reason) {
+      setToast(reason instanceof Error ? reason.message : 'No se pudo asignar la tarea.')
     }
   }
 
@@ -251,7 +285,8 @@ export default function TechTrackApp() {
           {historyTasks.length ? <section className="history-list" aria-label="Intervenciones del equipo">{historyTasks.map((task) => <button className="history-entry" key={task._id} onClick={() => void handleSelectTask(task)}><span className="history-marker"><History size={16} /></span><span className="history-entry-copy"><strong>{task.title}</strong><small>{task.activities || task.problemReported || task.description || 'Sin resumen de actividades.'}</small></span><span className="history-entry-meta"><span className={`history-status status-${task.status.toLowerCase()}`}>{statusLabels[task.status]}</span><time>{formatDate(task.updatedAt)}</time><ArrowRight size={15} /></span></button>)}</section> : <div className="empty-state history-empty"><span className="empty-icon"><History size={21} /></span><strong>Este equipo aún no tiene historial</strong><span>Las intervenciones asociadas aparecerán aquí con su fecha y detalle.</span></div>}
         </> : <>
           <div className="page-heading"><div><div className="eyebrow"><span className="eyebrow-line" /> CONTROL DE CALIDAD</div><h1>Supervisión de actividades</h1><p className="page-description">Intervenciones registradas por los técnicos.</p></div><span className="activity-count">{adminActivities.length} registros</span></div>
-          <section className="task-panel"><div className="admin-activity-list">{adminActivities.length ? adminActivities.map((item) => { const linkedEquipment = getEquipment(item); return <article className="admin-activity-row" key={item._id}><span className="task-type-icon"><ClipboardCheck size={16} /></span><div className="admin-activity-main"><strong>{item.activities || item.title}</strong><small>{item.owner?.name ?? 'Técnico'} · {linkedEquipment?.assetTag ?? 'Equipo'} {linkedEquipment?.name ? `· ${linkedEquipment.name}` : ''}</small></div><span className={`history-status status-${item.status.toLowerCase()}`}>{statusLabels[item.status]}</span><time>{formatDate(item.updatedAt)}</time></article> }) : <div className="empty-state"><span className="empty-icon"><ClipboardCheck size={21} /></span><strong>No hay actividades registradas</strong><span>Los registros técnicos aparecerán aquí para su revisión.</span></div>}</div></section>
+          <section className="admin-assignment"><div className="panel-heading"><div><h2>Asignar nueva tarea</h2><p>La tarea aparecerá en el espacio de trabajo del técnico seleccionado.</p></div></div><form className="admin-assignment-form" onSubmit={(event) => void handleCreateAssignment(event)}><div className="form-grid"><label>Técnico<select name="technicianId" value={selectedTechnicianId} required onChange={(event) => setSelectedTechnicianId(event.target.value)}><option value="" disabled>Selecciona un técnico</option>{adminTechnicians.map((technician) => <option key={technician._id} value={technician._id}>{technician.name} · {technician.email}</option>)}</select></label><label>Equipo asignado<select key={selectedTechnicianId} name="equipmentId" required defaultValue=""><option value="" disabled>Selecciona un equipo</option>{adminEquipment.filter((item) => item.owner === selectedTechnicianId).map((item) => <option key={item._id} value={item._id}>{item.assetTag} · {item.name}</option>)}</select></label></div><label>Título de la tarea<input name="title" required maxLength={120} placeholder="Ej. Mantenimiento preventivo" /></label><label>Descripción inicial<textarea name="description" rows={2} maxLength={2000} placeholder="Describe el trabajo solicitado" /></label><div className="dialog-actions"><span className="assignment-hint">{adminTechnicians.length === 0 ? 'No hay técnicos registrados.' : adminEquipment.every((item) => item.owner !== selectedTechnicianId) ? 'El técnico seleccionado aún no tiene equipos.' : 'El técnico podrá documentar y actualizar su tarea.'}</span><button type="submit" className="primary-button" disabled={!selectedTechnicianId || !adminEquipment.some((item) => item.owner === selectedTechnicianId)}><Plus size={15} /> Asignar tarea</button></div></form></section>
+          <section className="task-panel"><div className="admin-activity-list">{adminActivities.length ? adminActivities.map((item) => { const linkedEquipment = getEquipment(item); return <article className="admin-activity-row" key={item._id}><span className="task-type-icon"><ClipboardCheck size={16} /></span><div className="admin-activity-main"><strong>{item.activities || item.title}</strong><small>{item.owner?.name ?? 'Técnico'} · {linkedEquipment?.assetTag ?? 'Equipo'} {linkedEquipment?.name ? `· ${linkedEquipment.name}` : ''}</small></div><span className={`history-status status-${item.status.toLowerCase()}`}>{statusLabels[item.status]}</span><time>{formatDate(item.updatedAt)}</time><button className="admin-review-button" onClick={() => void handleSelectTask(item)} aria-label={`Revisar tarea: ${item.title}`}><Eye size={14} /> Revisar</button></article> }) : <div className="empty-state"><span className="empty-icon"><ClipboardCheck size={21} /></span><strong>No hay actividades registradas</strong><span>Los registros técnicos aparecerán aquí para su revisión.</span></div>}</div></section>
         </>}
         <footer className="page-footer"><span>TECHTRACK <span className="brand-period">/</span> TRAZABILIDAD TÉCNICA</span><span>Una intervención a la vez, con todo su contexto.</span></footer>
       </div>
@@ -262,6 +297,7 @@ export default function TechTrackApp() {
     </Modal>}
 
     {selectedTask && <Modal title="Detalle de intervención" onClose={() => setSelectedTask(null)} wide><div className="detail-content"><div className="detail-title"><span className="task-type-icon large"><Settings2 size={19} /></span><div><div className="eyebrow">{getEquipment(selectedTask)?.assetTag ?? 'TAREA TÉCNICA'}</div><h3>{selectedTask.title}</h3></div></div><div className="detail-meta"><span><Laptop size={15} /> {getEquipment(selectedTask)?.name ?? 'Equipo asociado'}</span><span><Clock3 size={15} /> Creada el {formatDate(selectedTask.createdAt)}</span><span>Actualizada el {formatDate(selectedTask.updatedAt)}</span></div><div className="detail-status"><span>Estado actual</span><StatusSelect value={selectedTask.status} onChange={(status) => void handleStatusChange(selectedTask, status)} /></div><form className="documentation-form" onSubmit={(event) => void handleSaveDocumentation(event, selectedTask)}><label>Problema reportado<textarea name="problemReported" rows={2} maxLength={3000} defaultValue={selectedTask.problemReported || selectedTask.description} disabled={selectedTask.status === 'COMPLETED'} /></label><label>Diagnóstico<textarea name="diagnosis" rows={3} maxLength={5000} defaultValue={selectedTask.diagnosis} placeholder="Describe la causa identificada" disabled={selectedTask.status === 'COMPLETED'} /></label><label>Actividades realizadas<textarea name="activities" rows={3} maxLength={5000} defaultValue={selectedTask.activities} placeholder="Detalla las acciones ejecutadas" disabled={selectedTask.status === 'COMPLETED'} /></label><label>Resultado<textarea name="result" rows={2} maxLength={3000} defaultValue={selectedTask.result} placeholder="¿Cuál fue el resultado de la intervención?" disabled={selectedTask.status === 'COMPLETED'} /></label><label>Recomendaciones<textarea name="recommendations" rows={2} maxLength={3000} defaultValue={selectedTask.recommendations} placeholder="Observaciones para el seguimiento" disabled={selectedTask.status === 'COMPLETED'} /></label>{selectedTask.status !== 'COMPLETED' ? <div className="dialog-actions"><button className="primary-button" type="submit"><Check size={15} /> Guardar documentación</button></div> : <p className="documentation-locked">La tarea está completada y su documentación ya no se puede editar.</p>}</form><section className="evidence-section"><div className="evidence-heading"><div><strong>Evidencias</strong><span>{selectedTask.evidence?.length ?? 0} imágenes adjuntas</span></div>{selectedTask.status !== 'COMPLETED' && <label className="evidence-upload"><ImagePlus size={15} />{uploadingEvidence ? 'Subiendo...' : 'Adjuntar imagen'}<input type="file" name="image" accept="image/jpeg,image/png,image/webp" disabled={uploadingEvidence} onChange={(event) => void handleUploadEvidence(event, selectedTask)} /></label>}</div>{selectedTask.evidence?.length ? <div className="evidence-grid">{selectedTask.evidence.map((item) => <EvidencePreview key={item._id} evidence={item} token={token!} />)}</div> : <p className="evidence-empty">Aún no hay evidencias adjuntas.</p>}</section></div></Modal>}
+    {adminReviewedTask && <Modal title="Revisión de tarea" onClose={() => setAdminReviewedTask(null)} wide><div className="detail-content"><div className="detail-title"><span className="task-type-icon large"><ClipboardCheck size={19} /></span><div><div className="eyebrow">{getEquipment(adminReviewedTask)?.assetTag ?? 'TAREA ASIGNADA'}</div><h3>{adminReviewedTask.title}</h3></div></div><div className="detail-meta"><span><strong>Técnico:</strong> {adminReviewedTask.owner.name} · {adminReviewedTask.owner.email}</span><span><Laptop size={15} /> {getEquipment(adminReviewedTask)?.name ?? 'Equipo asociado'}</span><span><Clock3 size={15} /> Creada el {formatDate(adminReviewedTask.createdAt)}</span><span>Actualizada el {formatDate(adminReviewedTask.updatedAt)}</span></div><div className="admin-review-status"><span>Estado actual</span><span className={`history-status status-${adminReviewedTask.status.toLowerCase()}`}>{statusLabels[adminReviewedTask.status]}</span></div><div className="admin-review-fields"><ReadOnlyField label="Problema reportado" value={adminReviewedTask.problemReported || adminReviewedTask.description} /><ReadOnlyField label="Diagnóstico" value={adminReviewedTask.diagnosis} /><ReadOnlyField label="Actividades realizadas" value={adminReviewedTask.activities} /><ReadOnlyField label="Resultado" value={adminReviewedTask.result} /><ReadOnlyField label="Recomendaciones" value={adminReviewedTask.recommendations} /></div><section className="admin-review-timeline"><strong>Historial de estado</strong>{adminReviewedTask.statusHistory?.length ? <ol>{adminReviewedTask.statusHistory.map((entry, index) => <li key={`${entry.status}-${entry.changedAt}-${index}`}><span className={`history-status status-${entry.status.toLowerCase()}`}>{statusLabels[entry.status]}</span><time>{formatDate(entry.changedAt)}</time></li>)}</ol> : <p>Sin cambios de estado registrados.</p>}</section><section className="evidence-section"><div className="evidence-heading"><div><strong>Evidencias</strong><span>{adminReviewedTask.evidence?.length ?? 0} imágenes adjuntas</span></div></div>{adminReviewedTask.evidence?.length ? <div className="evidence-grid">{adminReviewedTask.evidence.map((item) => <EvidencePreview key={item._id} evidence={item} token={token!} />)}</div> : <p className="evidence-empty">Esta tarea aún no tiene evidencias adjuntas.</p>}</section></div></Modal>}
     {toast && <div className="toast" role="status"><span className="toast-check"><Check size={14} /></span>{toast}<button onClick={() => setToast('')} aria-label="Cerrar mensaje"><X size={15} /></button></div>}
   </div>
 }
@@ -322,4 +358,8 @@ function EvidencePreview({ evidence, token }: { evidence: TaskEvidence; token: s
 
 function formatFileSize(size: number) {
   return `${(size / (1024 * 1024)).toFixed(2)} MB`
+}
+
+function ReadOnlyField({ label, value }: { label: string; value?: string }) {
+  return <div className="admin-readonly-field"><strong>{label}</strong><p>{value || 'Sin información registrada.'}</p></div>
 }
