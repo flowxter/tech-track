@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs'
 import { sign, type SignOptions } from 'jsonwebtoken'
 import { z } from 'zod'
 import { env } from '../../config/env'
+import { connectDatabase } from '../../config/database'
 import { requireAuth } from '../../middleware/requireAuth'
 import { UserModel } from '../../models/User'
 import { HttpError } from '../../utils/HttpError'
@@ -31,6 +32,7 @@ function issueToken(user: { id: string; tokenVersion: number }) {
 router.post('/register', authLimiter, asyncHandler(async (request, response) => {
   const input = registerSchema.safeParse(request.body)
   if (!input.success) throw new HttpError(400, input.error.issues[0]?.message ?? 'Revisa los datos del formulario.')
+  await connectDatabase()
   const existingUser = await UserModel.exists({ email: input.data.email })
   if (existingUser) throw new HttpError(409, 'Ya existe una cuenta con ese correo electrónico.')
 
@@ -46,6 +48,7 @@ router.post('/register', authLimiter, asyncHandler(async (request, response) => 
 router.post('/login', authLimiter, asyncHandler(async (request, response) => {
   const input = loginSchema.safeParse(request.body)
   if (!input.success) throw new HttpError(400, input.error.issues[0]?.message ?? 'Revisa tus credenciales.')
+  await connectDatabase()
   const user = await UserModel.findOne({ email: input.data.email }).select('+passwordHash')
   if (!user || !(await bcrypt.compare(input.data.password, user.passwordHash))) {
     throw new HttpError(401, 'Correo o contraseña incorrectos.')

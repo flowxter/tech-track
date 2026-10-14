@@ -47,6 +47,7 @@ before(async () => {
 })
 beforeEach(() => {
   mock.restoreAll()
+  stub(mongoose, 'connect', async () => mongoose)
   stub(UserModel, 'findById', (id) => query({ _id: id, id, name: 'Fixture', email: 'fixture@example.invalid', role: id === owner ? 'TECHNICIAN' : 'ADMIN', tokenVersion: 0 }))
 })
 after(async () => {

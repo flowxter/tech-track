@@ -4,6 +4,7 @@ import helmet from 'helmet'
 import { ZodError } from 'zod'
 import { env } from './config/env'
 import { UserModel } from './models/User'
+import { connectDatabase } from './config/database'
 import authRoutes from './modules/auth/auth.routes'
 import adminRoutes from './modules/admin/admin.routes'
 import equipmentRoutes from './modules/equipment/equipment.routes'
@@ -15,8 +16,10 @@ app.disable('x-powered-by')
 app.use(helmet())
 app.use(cors({ origin: env.CLIENT_ORIGIN, credentials: true }))
 app.use(express.json({ limit: '1mb' }))
-
-app.get('/api/health', (_request, response) => response.json({ status: 'ok', database: 'connected' }))
+app.get('/api/health', async (_request, response) => {
+  await connectDatabase()
+  response.json({ status: 'ok', database: 'connected' })
+})
 app.use('/api/auth', authRoutes)
 app.use('/api/admin', adminRoutes)
 app.use('/api/equipment', equipmentRoutes)

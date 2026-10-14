@@ -1,6 +1,7 @@
 import type { RequestHandler } from 'express'
 import { JsonWebTokenError, verify } from 'jsonwebtoken'
 import { env } from '../config/env'
+import { connectDatabase } from '../config/database'
 import { UserModel, type UserRole } from '../models/User'
 
 declare global {
@@ -20,17 +21,24 @@ export const requireAuth: RequestHandler = async (request, response, next) => {
     return
   }
 
+  let payload: { sub?: string; tokenVersion?: number }
   try {
-    const payload = verify(token, env.JWT_SECRET) as { sub?: string; tokenVersion?: number }
-    if (!payload.sub || typeof payload.tokenVersion !== 'number') throw new JsonWebTokenError('Token inválido.')
-    const user = await UserModel.findById(payload.sub).select('_id name email role tokenVersion')
-    if (!user || user.tokenVersion !== payload.tokenVersion) {
-      response.status(401).json({ message: 'La sesión expiró. Inicia sesión nuevamente.' })
-      return
-    }
-    request.authUser = { id: user.id, name: user.name, email: user.email, role: user.role as UserRole }
-    next()
+    payload = verify(token, env.JWT_SECRET) as { sub?: string; tokenVersion?: number }
   } catch {
     response.status(401).json({ message: 'La sesión no es válida. Inicia sesión nuevamente.' })
+    return
   }
+  if (!payload.sub || typeof payload.tokenVersion !== 'number') {
+    response.status(401).json({ message: 'La sesión no es válida. Inicia sesión nuevamente.' })
+    return
+  }
+
+  await connectDatabase()
+  const user = await UserModel.findById(payload.sub).select('_id name email role tokenVersion')
+  if (!user || user.tokenVersion !== payload.tokenVersion) {
+    response.status(401).json({ message: 'La sesión expiró. Inicia sesión nuevamente.' })
+    return
+  }
+  request.authUser = { id: user.id, name: user.name, email: user.email, role: user.role as UserRole }
+  next()
 }

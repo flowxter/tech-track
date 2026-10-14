@@ -60,6 +60,17 @@ La API queda en `http://localhost:4000` y el frontend en `http://localhost:5173`
 
 No guardes el `.env` ni credenciales reales en el repositorio. El archivo `.env.example` solo contiene marcadores.
 
+## Despliegue en Vercel
+
+El repositorio puede desplegarse como dos proyectos Vercel conectados al mismo repositorio:
+
+1. **API:** crea un proyecto con `back` como **Root Directory** y deja que Vercel detecte Express. La entrada `src/app.ts` exporta la aplicación; la conexión MongoDB se asegura por solicitud y se reutiliza entre invocaciones calientes. No configures un comando de salida estática.
+2. En el proyecto de la API agrega `MONGODB_URI`, `JWT_SECRET` (aleatorio, mínimo 32 caracteres), `JWT_EXPIRES_IN=8h` y `CLIENT_ORIGIN` con el origen exacto del frontend desplegado, sin barra final. Vercel administra `PORT` automáticamente.
+3. **Frontend:** crea otro proyecto del mismo repositorio, con `front` como **Root Directory**, `npm run build` como comando de build y `dist` como directorio de salida.
+4. En el frontend agrega `VITE_API_URL=https://<dominio-api>.vercel.app/api`. Después del primer despliegue, copia el dominio asignado y úsalo como `CLIENT_ORIGIN` en el backend; vuelve a desplegar ambos proyectos tras guardar las variables.
+
+La API también puede permanecer en Render; en ese caso, `CLIENT_ORIGIN` debe ser el dominio Vercel y `VITE_API_URL` debe apuntar al dominio Render. Nunca expongas `MONGODB_URI` ni `JWT_SECRET` como variables `VITE_*`.
+
 ## Flujo implementado
 
 El Sprint 1 cubre registro, inicio/cierre de sesión, equipos, tareas y transiciones de estado. El Sprint 2 completa la documentación de las intervenciones, sus evidencias, el historial por equipo y la consulta administrativa. Los técnicos solo consultan tareas y equipos de su cuenta; la supervisión requiere rol `ADMIN`.
