@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react'
 import {
   Activity, ArrowRight, Bell, Check, ChevronDown, CircleHelp, ClipboardCheck, ClipboardList,
   Clock3, Eye, History, ImagePlus, Laptop, LogOut, Plus, Search, Settings2, ShieldCheck, X,
 } from 'lucide-react'
-import { api, ApiError } from './api'
+import { api as publicApi, createApi, ApiError } from './api'
 import type { AdminActivity, AdminEquipment, Equipment, Task, TaskEvidence, TaskStatus, User } from './types'
 import { AuthScreen } from './components/AuthScreen'
 import './TechTrackApp.css'
@@ -15,9 +15,47 @@ const statusLabels: Record<TaskStatus, string> = {
 }
 const statusOrder: TaskStatus[] = ['PENDING', 'IN_PROGRESS', 'COMPLETED']
 
-/** Presenta la consola de tareas y equipos para el técnico autenticado. */
+type Session = { token: string; controller: AbortController; key: number }
+
+/** Desmontar el espacio elimina también formularios, modales y URLs de imágenes. */
 export default function TechTrackApp() {
-  const [token, setToken] = useState(() => localStorage.getItem('techtrack-token'))
+  const sequence = useRef(0)
+  const [session, setSession] = useState<Session | null>(() => {
+    const token = localStorage.getItem('techtrack-token')
+    return token ? { token, controller: new AbortController(), key: 0 } : null
+  })
+  const currentSession = useRef(session)
+
+  function replaceSession(token: string | null) {
+    currentSession.current?.controller.abort()
+    const next = token ? { token, controller: new AbortController(), key: ++sequence.current } : null
+    currentSession.current = next
+    setSession(next)
+  }
+
+  useEffect(() => {
+    function storageChanged(event: StorageEvent) {
+      if (event.key === 'techtrack-token' || event.key === null) replaceSession(localStorage.getItem('techtrack-token'))
+    }
+    window.addEventListener('storage', storageChanged)
+    return () => window.removeEventListener('storage', storageChanged)
+  }, [])
+
+  function clearSession() {
+    localStorage.removeItem('techtrack-token')
+    replaceSession(null)
+  }
+
+  if (!session) return <AuthScreen onAuthenticated={(token) => {
+    localStorage.setItem('techtrack-token', token)
+    replaceSession(token)
+  }} />
+  return <SessionWorkspace key={session.key} session={session} onSessionEnded={clearSession} />
+}
+
+function SessionWorkspace({ session, onSessionEnded }: { session: Session; onSessionEnded: () => void }) {
+  const { token } = session
+  const api = useMemo(() => createApi(session.controller.signal), [session])
   const [user, setUser] = useState<User | null>(null)
   const [tasks, setTasks] = useState<Task[]>([])
   const [equipment, setEquipment] = useState<Equipment[]>([])
@@ -37,6 +75,12 @@ export default function TechTrackApp() {
   const [loading, setLoading] = useState(() => Boolean(token))
   const [toast, setToast] = useState('')
   const [error, setError] = useState('')
+  const [documentationDraft, setDocumentationDraft] = useState<Documentation>(emptyDocumentation)
+  const [mutatingTask, setMutatingTask] = useState(false)
+  const mutationPending = useRef(false)
+  const detailRequest = useRef(0)
+  const historyRequest = useRef(0)
+  const documentationDirty = selectedTask !== null && documentationFields.some((field) => documentationDraft[field] !== readDocumentation(selectedTask)[field])
 
   useEffect(() => {
     if (!token) return
@@ -52,16 +96,14 @@ export default function TechTrackApp() {
       .catch((reason: unknown) => {
         if (cancelled) return
         if (reason instanceof ApiError && reason.status === 401) {
-          localStorage.removeItem('techtrack-token')
-          setToken(null)
-          setUser(null)
+          onSessionEnded()
         } else {
           setError(reason instanceof Error ? reason.message : 'No se pudo conectar con el servidor.')
         }
       })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [token])
+  }, [token, api, onSessionEnded])
 
   useEffect(() => {
     if (!toast) return
@@ -83,55 +125,83 @@ export default function TechTrackApp() {
     completed: tasks.filter((task) => task.status === 'COMPLETED').length,
   }), [tasks])
 
-  function handleAuthenticated(nextToken: string, profile: User) {
-    localStorage.setItem('techtrack-token', nextToken)
-    setLoading(true)
-    setToken(nextToken)
-    setUser(profile)
+  async function handleLogout() {
+    // La limpieza local es inmediata, incluso si la revocación falla o tarda.
+    onSessionEnded()
+    await publicApi.logout(token).catch(() => undefined)
   }
 
-  async function handleLogout() {
-    if (token) await api.logout(token).catch(() => undefined)
-    localStorage.removeItem('techtrack-token')
-    setToken(null)
-    setUser(null)
-    setTasks([])
-    setEquipment([])
+  function beginTaskMutation() {
+    if (mutationPending.current) return false
+    mutationPending.current = true
+    setMutatingTask(true)
+    return true
+  }
+
+  function endTaskMutation() {
+    mutationPending.current = false
+    setMutatingTask(false)
+  }
+
+  function closeTask() {
+    if (mutationPending.current) return
+    if (documentationDirty && !window.confirm('Hay cambios sin guardar. ¿Quieres descartarlos y cerrar?')) return
+    detailRequest.current++
+    setSelectedTask(null)
   }
 
   async function handleStatusChange(task: Task, status: TaskStatus) {
+    if (selectedTask?._id === task._id && documentationDirty) {
+      setToast('Hay cambios sin guardar. Guarda la documentación antes de cambiar el estado.')
+      return
+    }
+    if (!beginTaskMutation()) return
     try {
       const updated = await api.updateTaskStatus(token!, task._id, status)
       setTasks((current) => current.map((item) => item._id === updated._id ? updated : item))
       setSelectedTask(updated)
+      setDocumentationDraft(readDocumentation(updated))
       setToast(`Tarea actualizada a ${statusLabels[status].toLowerCase()}`)
     } catch (reason) {
       setToast(reason instanceof Error ? reason.message : 'No se pudo actualizar el estado.')
+    } finally {
+      endTaskMutation()
     }
   }
 
   async function handleSelectTask(task: Task) {
+    const requestId = ++detailRequest.current
+    setSelectedTask(null)
+    setAdminReviewedTask(null)
     try {
       if (user?.role === 'ADMIN') {
         const detailedTask = await api.getAdminTask(token!, task._id)
+        if (requestId !== detailRequest.current) return
         setAdminReviewedTask(detailedTask)
         return
       }
-      setSelectedTask(task)
       const detailedTask = await api.getTask(token!, task._id)
+      if (requestId !== detailRequest.current) return
       setSelectedTask(detailedTask)
+      setDocumentationDraft(readDocumentation(detailedTask))
     } catch (reason) {
+      if (requestId !== detailRequest.current) return
       setToast(reason instanceof Error ? reason.message : 'No se pudo cargar el detalle de la tarea.')
     }
   }
 
   async function handleOpenHistory(item: Equipment) {
+    const requestId = ++historyRequest.current
+    setHistoryEquipment(null)
+    setHistoryTasks([])
     try {
       const history = await api.getEquipmentHistory(token!, item._id)
+      if (requestId !== historyRequest.current) return
       setHistoryEquipment(history.equipment)
       setHistoryTasks(history.tasks)
       setActiveView('history')
     } catch (reason) {
+      if (requestId !== historyRequest.current) return
       setToast(reason instanceof Error ? reason.message : 'No se pudo cargar el historial del equipo.')
     }
   }
@@ -172,20 +242,17 @@ export default function TechTrackApp() {
 
   async function handleSaveDocumentation(event: FormEvent<HTMLFormElement>, task: Task) {
     event.preventDefault()
-    const data = new FormData(event.currentTarget)
+    if (!beginTaskMutation()) return
     try {
-      const updated = await api.updateTaskDocumentation(token!, task._id, {
-        problemReported: String(data.get('problemReported')).trim(),
-        diagnosis: String(data.get('diagnosis')).trim(),
-        activities: String(data.get('activities')).trim(),
-        result: String(data.get('result')).trim(),
-        recommendations: String(data.get('recommendations')).trim(),
-      })
+      const updated = await api.updateTaskDocumentation(token!, task._id, documentationDraft)
       setSelectedTask(updated.task)
+      setDocumentationDraft(readDocumentation(updated.task))
       setTasks((current) => current.map((item) => item._id === updated.task._id ? updated.task : item))
       setToast(updated.message)
     } catch (reason) {
       setToast(reason instanceof Error ? reason.message : 'No se pudo guardar la documentación.')
+    } finally {
+      endTaskMutation()
     }
   }
 
@@ -193,6 +260,7 @@ export default function TechTrackApp() {
     const input = event.currentTarget
     const image = input.files?.[0]
     if (!image) return
+    if (!beginTaskMutation()) { input.value = ''; return }
     setUploadingEvidence(true)
     try {
       const result = await api.uploadEvidence(token!, task._id, image)
@@ -202,6 +270,7 @@ export default function TechTrackApp() {
     } catch (reason) {
       setToast(reason instanceof Error ? reason.message : 'No se pudo adjuntar la imagen.')
     } finally {
+      endTaskMutation()
       setUploadingEvidence(false)
       input.value = ''
     }
@@ -245,7 +314,7 @@ export default function TechTrackApp() {
     }
   }
 
-  if (!user) return <AuthScreen onAuthenticated={handleAuthenticated} />
+  if (!user) return <main className="auth-page"><p role="status">{error || 'Verificando sesión...'}</p><button onClick={() => void handleLogout()}>Cerrar sesión</button></main>
 
   return <div className="app-shell">
     <aside className="sidebar">
@@ -296,10 +365,17 @@ export default function TechTrackApp() {
       {modal === 'task' ? <form className="dialog-form" onSubmit={(event) => void handleCreateTask(event)}><div className="form-intro"><span className="dialog-icon"><ClipboardList size={18} /></span><div><strong>Define la intervención</strong><span>La tarea se creará con estado pendiente.</span></div></div><label>Título de la tarea<input name="title" required maxLength={120} placeholder="Ej. Diagnóstico de equipo" /></label><label>Equipo asociado<select name="equipmentId" required defaultValue=""><option value="" disabled>Selecciona un equipo</option>{equipment.map((item) => <option key={item._id} value={item._id}>{item.assetTag} · {item.name}</option>)}</select></label><label>Descripción del problema<textarea name="description" rows={3} placeholder="Describe brevemente el trabajo solicitado" /></label>{equipment.length === 0 && <div className="form-warning"><Laptop size={16} /> Primero registra un equipo para poder asociarlo a una tarea.</div>}<div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setModal(null)}>Cancelar</button><button type="submit" className="primary-button" disabled={equipment.length === 0}><Plus size={16} /> Crear tarea</button></div></form> : <form className="dialog-form" onSubmit={(event) => void handleCreateEquipment(event)}><div className="form-intro"><span className="dialog-icon"><Laptop size={18} /></span><div><strong>Identifica el activo</strong><span>Completa los datos para facilitar su seguimiento.</span></div></div><div className="form-grid"><label>Identificador<input name="assetTag" required maxLength={40} placeholder="Ej. PC-001" /></label><label>Tipo<input name="type" required maxLength={60} placeholder="Laptop, servidor..." /></label></div><label>Nombre o descripción<input name="name" required maxLength={120} placeholder="Ej. Laptop de recepción" /></label><div className="form-grid"><label>Marca<input name="brand" required maxLength={60} placeholder="Ej. Lenovo" /></label><label>Modelo<input name="model" required maxLength={80} placeholder="Ej. ThinkPad E14" /></label></div><label>Número de serie<input name="serialNumber" required maxLength={100} placeholder="Número de serie del fabricante" /></label><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setModal(null)}>Cancelar</button><button type="submit" className="primary-button"><Plus size={16} /> Guardar equipo</button></div></form>}
     </Modal>}
 
-    {selectedTask && <Modal title="Detalle de intervención" onClose={() => setSelectedTask(null)} wide><div className="detail-content"><div className="detail-title"><span className="task-type-icon large"><Settings2 size={19} /></span><div><div className="eyebrow">{getEquipment(selectedTask)?.assetTag ?? 'TAREA TÉCNICA'}</div><h3>{selectedTask.title}</h3></div></div><div className="detail-meta"><span><Laptop size={15} /> {getEquipment(selectedTask)?.name ?? 'Equipo asociado'}</span><span><Clock3 size={15} /> Creada el {formatDate(selectedTask.createdAt)}</span><span>Actualizada el {formatDate(selectedTask.updatedAt)}</span></div><div className="detail-status"><span>Estado actual</span><StatusSelect value={selectedTask.status} onChange={(status) => void handleStatusChange(selectedTask, status)} /></div><form className="documentation-form" onSubmit={(event) => void handleSaveDocumentation(event, selectedTask)}><label>Problema reportado<textarea name="problemReported" rows={2} maxLength={3000} defaultValue={selectedTask.problemReported || selectedTask.description} disabled={selectedTask.status === 'COMPLETED'} /></label><label>Diagnóstico<textarea name="diagnosis" rows={3} maxLength={5000} defaultValue={selectedTask.diagnosis} placeholder="Describe la causa identificada" disabled={selectedTask.status === 'COMPLETED'} /></label><label>Actividades realizadas<textarea name="activities" rows={3} maxLength={5000} defaultValue={selectedTask.activities} placeholder="Detalla las acciones ejecutadas" disabled={selectedTask.status === 'COMPLETED'} /></label><label>Resultado<textarea name="result" rows={2} maxLength={3000} defaultValue={selectedTask.result} placeholder="¿Cuál fue el resultado de la intervención?" disabled={selectedTask.status === 'COMPLETED'} /></label><label>Recomendaciones<textarea name="recommendations" rows={2} maxLength={3000} defaultValue={selectedTask.recommendations} placeholder="Observaciones para el seguimiento" disabled={selectedTask.status === 'COMPLETED'} /></label>{selectedTask.status !== 'COMPLETED' ? <div className="dialog-actions"><button className="primary-button" type="submit"><Check size={15} /> Guardar documentación</button></div> : <p className="documentation-locked">La tarea está completada y su documentación ya no se puede editar.</p>}</form><section className="evidence-section"><div className="evidence-heading"><div><strong>Evidencias</strong><span>{selectedTask.evidence?.length ?? 0} imágenes adjuntas</span></div>{selectedTask.status !== 'COMPLETED' && <label className="evidence-upload"><ImagePlus size={15} />{uploadingEvidence ? 'Subiendo...' : 'Adjuntar imagen'}<input type="file" name="image" accept="image/jpeg,image/png,image/webp" disabled={uploadingEvidence} onChange={(event) => void handleUploadEvidence(event, selectedTask)} /></label>}</div>{selectedTask.evidence?.length ? <div className="evidence-grid">{selectedTask.evidence.map((item) => <EvidencePreview key={item._id} evidence={item} token={token!} />)}</div> : <p className="evidence-empty">Aún no hay evidencias adjuntas.</p>}</section></div></Modal>}
-    {adminReviewedTask && <Modal title="Revisión de tarea" onClose={() => setAdminReviewedTask(null)} wide><div className="detail-content"><div className="detail-title"><span className="task-type-icon large"><ClipboardCheck size={19} /></span><div><div className="eyebrow">{getEquipment(adminReviewedTask)?.assetTag ?? 'TAREA ASIGNADA'}</div><h3>{adminReviewedTask.title}</h3></div></div><div className="detail-meta"><span><strong>Técnico:</strong> {adminReviewedTask.owner.name} · {adminReviewedTask.owner.email}</span><span><Laptop size={15} /> {getEquipment(adminReviewedTask)?.name ?? 'Equipo asociado'}</span><span><Clock3 size={15} /> Creada el {formatDate(adminReviewedTask.createdAt)}</span><span>Actualizada el {formatDate(adminReviewedTask.updatedAt)}</span></div><div className="admin-review-status"><span>Estado actual</span><span className={`history-status status-${adminReviewedTask.status.toLowerCase()}`}>{statusLabels[adminReviewedTask.status]}</span></div><div className="admin-review-fields"><ReadOnlyField label="Problema reportado" value={adminReviewedTask.problemReported || adminReviewedTask.description} /><ReadOnlyField label="Diagnóstico" value={adminReviewedTask.diagnosis} /><ReadOnlyField label="Actividades realizadas" value={adminReviewedTask.activities} /><ReadOnlyField label="Resultado" value={adminReviewedTask.result} /><ReadOnlyField label="Recomendaciones" value={adminReviewedTask.recommendations} /></div><section className="admin-review-timeline"><strong>Historial de estado</strong>{adminReviewedTask.statusHistory?.length ? <ol>{adminReviewedTask.statusHistory.map((entry, index) => <li key={`${entry.status}-${entry.changedAt}-${index}`}><span className={`history-status status-${entry.status.toLowerCase()}`}>{statusLabels[entry.status]}</span><time>{formatDate(entry.changedAt)}</time></li>)}</ol> : <p>Sin cambios de estado registrados.</p>}</section><section className="evidence-section"><div className="evidence-heading"><div><strong>Evidencias</strong><span>{adminReviewedTask.evidence?.length ?? 0} imágenes adjuntas</span></div></div>{adminReviewedTask.evidence?.length ? <div className="evidence-grid">{adminReviewedTask.evidence.map((item) => <EvidencePreview key={item._id} evidence={item} token={token!} />)}</div> : <p className="evidence-empty">Esta tarea aún no tiene evidencias adjuntas.</p>}</section></div></Modal>}
+    {selectedTask && <Modal title="Detalle de intervención" onClose={closeTask} wide><div className="detail-content"><div className="detail-title"><span className="task-type-icon large"><Settings2 size={19} /></span><div><div className="eyebrow">{getEquipment(selectedTask)?.assetTag ?? 'TAREA TÉCNICA'}</div><h3>{selectedTask.title}</h3></div></div><div className="detail-meta"><span><Laptop size={15} /> {getEquipment(selectedTask)?.name ?? 'Equipo asociado'}</span><span><Clock3 size={15} /> Creada el {formatDate(selectedTask.createdAt)}</span><span>Actualizada el {formatDate(selectedTask.updatedAt)}</span></div><div className="detail-status"><span>Estado actual</span><StatusSelect disabled={mutatingTask} value={selectedTask.status} onChange={(status) => void handleStatusChange(selectedTask, status)} /></div><form className="documentation-form" onSubmit={(event) => void handleSaveDocumentation(event, selectedTask)}><label>Problema reportado<textarea name="problemReported" rows={2} maxLength={3000} value={documentationDraft.problemReported} onChange={(event) => setDocumentationDraft((draft) => ({ ...draft, problemReported: event.target.value }))} disabled={selectedTask.status === 'COMPLETED' || mutatingTask} /></label><label>Diagnóstico<textarea name="diagnosis" rows={3} maxLength={5000} value={documentationDraft.diagnosis} onChange={(event) => setDocumentationDraft((draft) => ({ ...draft, diagnosis: event.target.value }))} placeholder="Describe la causa identificada" disabled={selectedTask.status === 'COMPLETED' || mutatingTask} /></label><label>Actividades realizadas<textarea name="activities" rows={3} maxLength={5000} value={documentationDraft.activities} onChange={(event) => setDocumentationDraft((draft) => ({ ...draft, activities: event.target.value }))} placeholder="Detalla las acciones ejecutadas" disabled={selectedTask.status === 'COMPLETED' || mutatingTask} /></label><label>Resultado<textarea name="result" rows={2} maxLength={3000} value={documentationDraft.result} onChange={(event) => setDocumentationDraft((draft) => ({ ...draft, result: event.target.value }))} placeholder="¿Cuál fue el resultado de la intervención?" disabled={selectedTask.status === 'COMPLETED' || mutatingTask} /></label><label>Recomendaciones<textarea name="recommendations" rows={2} maxLength={3000} value={documentationDraft.recommendations} onChange={(event) => setDocumentationDraft((draft) => ({ ...draft, recommendations: event.target.value }))} placeholder="Observaciones para el seguimiento" disabled={selectedTask.status === 'COMPLETED' || mutatingTask} /></label>{selectedTask.status !== 'COMPLETED' ? <div className="dialog-actions"><button className="primary-button" type="submit" disabled={mutatingTask}><Check size={15} /> Guardar documentación</button></div> : <p className="documentation-locked">La tarea está completada y su documentación ya no se puede editar.</p>}</form>{documentationDirty && <p role="alert">Hay cambios sin guardar. Guarda la documentación antes de completar la tarea.</p>}<section className="evidence-section"><div className="evidence-heading"><div><strong>Evidencias</strong><span>{selectedTask.evidence?.length ?? 0} imágenes adjuntas</span></div>{selectedTask.status !== 'COMPLETED' && <label className="evidence-upload"><ImagePlus size={15} />{uploadingEvidence ? 'Subiendo...' : 'Adjuntar imagen'}<input type="file" name="image" accept="image/jpeg,image/png,image/webp" disabled={mutatingTask} onChange={(event) => void handleUploadEvidence(event, selectedTask)} /></label>}</div>{selectedTask.evidence?.length ? <div className="evidence-grid">{selectedTask.evidence.map((item) => <EvidencePreview key={item._id} evidence={item} token={token!} api={api} />)}</div> : <p className="evidence-empty">Aún no hay evidencias adjuntas.</p>}</section></div></Modal>}
+    {adminReviewedTask && <Modal title="Revisión de tarea" onClose={() => setAdminReviewedTask(null)} wide><div className="detail-content"><div className="detail-title"><span className="task-type-icon large"><ClipboardCheck size={19} /></span><div><div className="eyebrow">{getEquipment(adminReviewedTask)?.assetTag ?? 'TAREA ASIGNADA'}</div><h3>{adminReviewedTask.title}</h3></div></div><div className="detail-meta"><span><strong>Técnico:</strong> {adminReviewedTask.owner.name} · {adminReviewedTask.owner.email}</span><span><Laptop size={15} /> {getEquipment(adminReviewedTask)?.name ?? 'Equipo asociado'}</span><span><Clock3 size={15} /> Creada el {formatDate(adminReviewedTask.createdAt)}</span><span>Actualizada el {formatDate(adminReviewedTask.updatedAt)}</span></div><div className="admin-review-status"><span>Estado actual</span><span className={`history-status status-${adminReviewedTask.status.toLowerCase()}`}>{statusLabels[adminReviewedTask.status]}</span></div><div className="admin-review-fields"><ReadOnlyField label="Problema reportado" value={adminReviewedTask.problemReported || adminReviewedTask.description} /><ReadOnlyField label="Diagnóstico" value={adminReviewedTask.diagnosis} /><ReadOnlyField label="Actividades realizadas" value={adminReviewedTask.activities} /><ReadOnlyField label="Resultado" value={adminReviewedTask.result} /><ReadOnlyField label="Recomendaciones" value={adminReviewedTask.recommendations} /></div><section className="admin-review-timeline"><strong>Historial de estado</strong>{adminReviewedTask.statusHistory?.length ? <ol>{adminReviewedTask.statusHistory.map((entry, index) => <li key={`${entry.status}-${entry.changedAt}-${index}`}><span className={`history-status status-${entry.status.toLowerCase()}`}>{statusLabels[entry.status]}</span><time>{formatDate(entry.changedAt)}</time></li>)}</ol> : <p>Sin cambios de estado registrados.</p>}</section><section className="evidence-section"><div className="evidence-heading"><div><strong>Evidencias</strong><span>{adminReviewedTask.evidence?.length ?? 0} imágenes adjuntas</span></div></div>{adminReviewedTask.evidence?.length ? <div className="evidence-grid">{adminReviewedTask.evidence.map((item) => <EvidencePreview key={item._id} evidence={item} token={token!} api={api} />)}</div> : <p className="evidence-empty">Esta tarea aún no tiene evidencias adjuntas.</p>}</section></div></Modal>}
     {toast && <div className="toast" role="status"><span className="toast-check"><Check size={14} /></span>{toast}<button onClick={() => setToast('')} aria-label="Cerrar mensaje"><X size={15} /></button></div>}
   </div>
+}
+
+const documentationFields = ['problemReported', 'diagnosis', 'activities', 'result', 'recommendations'] as const
+type Documentation = Pick<Task, typeof documentationFields[number]>
+const emptyDocumentation: Documentation = { problemReported: '', diagnosis: '', activities: '', result: '', recommendations: '' }
+function readDocumentation(task: Task): Documentation {
+  return { problemReported: task.problemReported || task.description || '', diagnosis: task.diagnosis || '', activities: task.activities || '', result: task.result || '', recommendations: task.recommendations || '' }
 }
 
 function formatDate(value: string) {
@@ -319,9 +395,9 @@ function MetricCard({ label, value, detail, icon, tone }: { label: string; value
   return <article className="metric-card"><span className={`metric-icon ${tone}`}>{icon}</span><div className="metric-label">{label}</div><div className="metric-value">{value}</div><div className="metric-detail">{detail}</div></article>
 }
 
-function StatusSelect({ value, onChange }: { value: TaskStatus; onChange: (status: TaskStatus) => void }) {
+function StatusSelect({ value, onChange, disabled = false }: { value: TaskStatus; onChange: (status: TaskStatus) => void; disabled?: boolean }) {
   const validOptions = value === 'PENDING' ? ['PENDING', 'IN_PROGRESS'] as TaskStatus[] : value === 'IN_PROGRESS' ? ['IN_PROGRESS', 'COMPLETED'] as TaskStatus[] : ['COMPLETED'] as TaskStatus[]
-  return <span className={`status-wrap status-${value.toLowerCase()}`}><span className="status-dot" /><select aria-label="Cambiar estado de tarea" value={value} onChange={(event) => onChange(event.target.value as TaskStatus)}>{validOptions.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select><ChevronDown size={13} /></span>
+  return <span className={`status-wrap status-${value.toLowerCase()}`}><span className="status-dot" /><select disabled={disabled} aria-label="Cambiar estado de tarea" value={value} onChange={(event) => onChange(event.target.value as TaskStatus)}>{validOptions.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select><ChevronDown size={13} /></span>
 }
 
 function Modal({ title, onClose, wide = false, children }: { title: string; onClose: () => void; wide?: boolean; children: ReactNode }) {
@@ -333,13 +409,15 @@ function Modal({ title, onClose, wide = false, children }: { title: string; onCl
   return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><section className={`modal ${wide ? 'modal-wide' : ''}`} role="dialog" aria-modal="true" aria-label={title}><header className="modal-header"><strong>{title}</strong><button className="icon-button" onClick={onClose} aria-label="Cerrar"><X size={18} /></button></header>{children}</section></div>
 }
 
-function EvidencePreview({ evidence, token }: { evidence: TaskEvidence; token: string }) {
+function EvidencePreview({ evidence, token, api }: { evidence: TaskEvidence; token: string; api: ReturnType<typeof createApi> }) {
   const [imageUrl, setImageUrl] = useState('')
   const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     let active = true
     let objectUrl = ''
+    setImageUrl('')
+    setFailed(false)
     api.getEvidenceImage(token, evidence.url)
       .then((blob) => {
         if (!active) return
@@ -351,7 +429,7 @@ function EvidencePreview({ evidence, token }: { evidence: TaskEvidence; token: s
       active = false
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [evidence.url, token])
+  }, [evidence.url, token, api])
 
   return <article className="evidence-item">{imageUrl ? <a href={imageUrl} target="_blank" rel="noreferrer"><img src={imageUrl} alt={evidence.filename} /><span>{evidence.filename}</span></a> : <div className="evidence-image-placeholder">{failed ? 'No se pudo cargar' : 'Cargando imagen...'}</div>}<small>{formatFileSize(evidence.size)} · {formatDate(evidence.uploadedAt)}</small></article>
 }

@@ -8,6 +8,8 @@ import { TaskModel } from '../../models/Task'
 import { UserModel } from '../../models/User'
 import { HttpError } from '../../utils/HttpError'
 import { asyncHandler } from '../../utils/asyncHandler'
+import { validateObjectId } from '../../middleware/validateObjectId'
+import { withTaskEvidence } from '../tasks/taskEvidence'
 
 const router = Router()
 const assignmentSchema = z.object({
@@ -18,6 +20,9 @@ const assignmentSchema = z.object({
 })
 
 router.use(requireAuth, requireAdmin)
+router.param('id', validateObjectId)
+router.param('taskId', validateObjectId)
+router.param('evidenceId', validateObjectId)
 
 router.get('/technicians', asyncHandler(async (_request, response) => {
   const technicians = await UserModel.find({ role: 'TECHNICIAN' }).select('name email role').sort({ name: 1 }).lean()
@@ -34,7 +39,7 @@ router.get('/activities', asyncHandler(async (_request, response) => {
     .populate('equipment', 'assetTag name type brand model serialNumber')
     .sort({ updatedAt: -1, createdAt: -1 })
     .lean()
-  response.json({ activities })
+  response.json({ activities: await withTaskEvidence(activities, true) })
 }))
 
 router.post('/tasks', asyncHandler(async (request, response) => {
@@ -68,21 +73,7 @@ router.get('/tasks/:id', asyncHandler(async (request, response) => {
     .populate('equipment', 'assetTag name type brand model serialNumber')
     .lean()
   if (!task) throw new HttpError(404, 'No se encontró la tarea solicitada.')
-  const evidence = await EvidenceModel.find({ task: task._id, owner: task.owner._id })
-    .select('filename mimeType size uploadedAt')
-    .sort({ uploadedAt: 1 })
-    .lean()
-  response.json({ task: {
-    ...task,
-    evidence: evidence.map((item) => ({
-      _id: String(item._id),
-      filename: item.filename,
-      mimeType: item.mimeType,
-      size: item.size,
-      uploadedAt: item.uploadedAt,
-      url: `/admin/tasks/${taskId}/evidence/${item._id}/content`,
-    })),
-  } })
+  response.json({ task: (await withTaskEvidence([task], true))[0] })
 }))
 
 router.get('/tasks/:taskId/evidence/:evidenceId/content', asyncHandler(async (request, response) => {
