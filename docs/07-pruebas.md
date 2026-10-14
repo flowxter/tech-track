@@ -1,152 +1,154 @@
-# Estrategia y Plan de Pruebas – TechTrack
+# Estrategia y Resultados de Pruebas — TechTrack
 
-**Proyecto:** TechTrack – Gestor de Soporte Técnico  
-**Etapa del pipeline:** 6. Pruebas (integrada desde Desarrollo)  
-**Versión:** 1.0  
-**Estado:** Plan de pruebas; **ninguna ejecución se presume realizada** por el contenido de este documento.
+**Proyecto:** TechTrack — Gestor de Soporte Técnico  
+**Etapa del pipeline:** 06. Pruebas  
+**Versión:** 2.0  
+**Estado:** Auditoría, regresión y verificación funcional realizadas; aceptación global pendiente.
 
-## 1. Propósito
+## 1. Objetivo, fuente y alcance
 
-Establecer qué debe comprobarse, cómo registrar los resultados y cómo vincular cada prueba a historias de usuario, requisitos y commits. Las pruebas se ejecutarán sobre la implementación real de TechTrack; los criterios de aceptación detallados deben cotejarse con los originales de Jira y la revisión HITL de `04-product-backlog.md`.
+Comprobar las **12 historias** frente a los **59 criterios oficiales de Jira** (`MGDST-1` a `MGDST-12`), detectar defectos y verificar las correcciones autorizadas. Esta es la **fuente documental central de los resultados de QA**; [Evaluación](09-evaluacion.md) interpreta sus métricas sin duplicar la matriz completa.
 
-## 2. Alcance y estrategia
+Se evaluó la aplicación React/Vite + Express + MongoDB Atlas mediante inspección, pruebas automatizadas, escenarios simulados y recorridos funcionales reales. No se afirma cobertura integral de código, carga, accesibilidad, dispositivos ni producción.
 
-**Componentes previstos:** React/TypeScript, API Node.js/TypeScript, MongoDB y mecanismo de evidencias por decidir. Los tipos concretos de pruebas y herramientas se ajustarán al stack realmente implementado.
+## 2. Estrategia y niveles
 
-| Nivel | Qué comprueba | Ejemplo |
+| Tipo | Alcance | Situación |
 |---|---|---|
-| Unitarias | Reglas y validaciones aisladas | Rechazar un estado de tarea no admitido |
-| Integración | Conexión API–persistencia–archivos | Crear tarea y recuperar su vínculo con equipo |
-| API / seguridad | Autenticación, autorización, validación | Impedir acceso a recurso de otro usuario |
-| Funcionales / aceptación | Recorrido desde la perspectiva del actor | Registrar equipo → tarea → intervención → historial |
-| Interfaz / responsive | Formularios, estados y tamaños de pantalla | Flujo principal en móvil y escritorio |
-| Smoke tras despliegue | Servicios y camino crítico | Acceso, crear tarea y consulta después de publicar |
+| Unitarias | Reglas de estado y validación de imágenes | Ejecutadas |
+| API simulada | Errores, contratos y escenarios HTTP | Ejecutadas |
+| Navegador con API simulada | Formularios, transiciones y regresión de UI | Ejecutadas |
+| Funcional real | Frontend, backend, MongoDB Atlas, persistencia y roles | Ejecutada |
+| Seguridad funcional | Acceso anónimo, entre usuarios y administrativo | Ejecutada en escenarios específicos |
+| Rendimiento y carga | Medición de latencia y concurrencia | No evaluada formalmente |
+| Compatibilidad y accesibilidad exhaustivas | Matriz de navegadores/dispositivos | No evaluada formalmente |
+| Smoke posterior al despliegue público | Comportamiento en Vercel | Pendiente |
 
-**Herramientas sugeridas, no acordadas:** Vitest/Jest para unitarias, librería HTTP de pruebas para API y Playwright para E2E. Elegir herramientas compatibles con el código existente antes de implementarlas.
+## 3. Catálogo original de casos (CP-01 a CP-24)
 
-## 3. Trazabilidad HU → pruebas candidatas
+Los códigos siguientes forman parte del **plan de pruebas**; no se considera que cada CP haya sido ejecutado literalmente por el solo hecho de existir. La ejecución final de Codex fue reportada principalmente por criterios y escenarios.
 
-Todos los casos tienen **estado inicial: No ejecutado**. Los IDs `CP-...` son propuestos para organizar pruebas, no evidencias de ejecución.
+| Caso | HU | Escenario y resultado esperado |
+|---|---|---|
+| CP-01 | HU01 | Registro válido → cuenta creada |
+| CP-02 | HU01 | Registro inválido → rechazo; credenciales protegidas |
+| CP-03 | HU02 | Login correcto → sesión válida |
+| CP-04 | HU02 | Contraseña errónea/cierre de sesión → acceso denegado |
+| CP-05 | HU03 | Registrar equipo → persistencia |
+| CP-06 | HU03 | Datos inválidos/selección → validación y consulta consistentes |
+| CP-07 | HU04 | Crear tarea sobre equipo propio → vínculo correcto |
+| CP-08 | HU04 | Equipo inexistente/no autorizado → rechazo |
+| CP-09 | HU05 | Listar tareas propias → información y estado correctos |
+| CP-10 | HU05 | Consultar tarea ajena → acceso denegado |
+| CP-11 | HU06 | Cambiar a estado permitido → persistencia |
+| CP-12 | HU06 | Estado inválido/usuario no autorizado → rechazo |
+| CP-13 | HU07 | Guardar problema y diagnóstico → relación correcta |
+| CP-14 | HU07 | Documentar tarea inexistente → rechazo controlado |
+| CP-15 | HU08 | Guardar actividades y resultado → persistencia |
+| CP-16 | HU08 | Vincular datos a otra tarea → sin mezcla de registros |
+| CP-17 | HU09 | Cargar imagen admitida → consulta autorizada |
+| CP-18 | HU09 | Archivo inválido, grande o acceso ajeno → rechazo |
+| CP-19 | HU10 | Historial con intervenciones → solo las del equipo |
+| CP-20 | HU10 | Historial vacío → sin registros ficticios |
+| CP-21 | HU11 | Abrir detalle → documentación y evidencias disponibles |
+| CP-22 | HU11 | Detalle no autorizado/inexistente → respuesta controlada |
+| CP-23 | HU12 | Consultar actividad como administrador → vista permitida |
+| CP-24 | HU12 | Consulta administrativa como técnico → acceso denegado |
 
-| Caso | Historia / requisito | Escenario a verificar | Resultado esperado |
-|---|---|---|---|
-| CP-01 | HU01 / RF-01 | Registro con datos válidos | Cuenta creada y confirmación |
-| CP-02 | HU01 / RF-01, RNF-03 | Registro inválido e inspección de credencial | Error claro; contraseña no expuesta ni almacenada en claro |
-| CP-03 | HU02 / RF-02 | Inicio de sesión correcto | Sesión válida y acceso a vista protegida |
-| CP-04 | HU02 / RF-02/03, RNF-01 | Clave errónea y acceso tras cerrar sesión | Acceso denegado |
-| CP-05 | HU03 / RF-04 | Registro válido de equipo | Equipo persistido e identificable |
-| CP-06 | HU03 / RF-04/05 | Datos inválidos / seleccionar equipo | Validación y recuperación consistentes |
-| CP-07 | HU04 / RF-06, RN-01 | Crear tarea sobre equipo existente | Tarea creada con vínculo correcto |
-| CP-08 | HU04 / RF-06, RNF-04 | Crear tarea con equipo inexistente | Rechazo sin registro huérfano |
-| CP-09 | HU05 / RF-07 | Consultar tareas autorizadas | Listado muestra registros y estados correctos |
-| CP-10 | HU05 / RNF-02 | Consultar tarea no permitida | Servidor aplica restricciones de acceso |
-| CP-11 | HU06 / RF-08, RN-02 | Actualizar a estado admitido | Cambio persistido y visible |
-| CP-12 | HU06 / RF-08 | Estado inválido o cambio sin permiso | Cambio rechazado |
-| CP-13 | HU07 / RF-09 | Guardar problema y diagnóstico | Datos asociados a la tarea correcta |
-| CP-14 | HU07 / RF-09 | Registrar diagnóstico sobre tarea inexistente | Rechazo controlado |
-| CP-15 | HU08 / RF-10 | Guardar actividades y resultado | Información persiste y se recupera |
-| CP-16 | HU08 / RN-03 | Intentar vincular intervención con otra tarea | No se mezclan datos de tareas |
-| CP-17 | HU09 / RF-11 | Subir imagen permitida | Evidencia accesible desde tarea autorizada |
-| CP-18 | HU09 / RNF-07/08 | Archivo inválido, excesivo o consulta no autorizada | Rechazo y archivo no expuesto |
-| CP-19 | HU10 / RF-12, RN-04 | Consultar historial de equipo con tareas | Solo muestra intervenciones del equipo solicitado |
-| CP-20 | HU10 / RF-12 | Consultar historial vacío | Mensaje de ausencia, sin datos ajenos |
-| CP-21 | HU11 / RF-13 | Abrir detalle de tarea | Se muestran los datos y evidencias existentes |
-| CP-22 | HU11 / RNF-02 | Abrir detalle inexistente/no autorizado | Respuesta apropiada y sin fuga de datos |
-| CP-23 | HU12 / RF-14 | Administrador consulta actividades | Visualización conforme al alcance aprobado |
-| CP-24 | HU12 / RNF-02 | Técnico intenta consulta exclusiva admin | Acceso denegado por el backend |
+### 3.1. Pruebas no funcionales previstas (PNF)
 
-Las reglas abiertas (obligatoriedad de diagnóstico/evidencia, límites de archivos, visibilidad entre técnicos) deben resolverse **antes** de ejecutar sus casos afectados. No convertir una ambigüedad en un resultado ficticio.
+| Caso | RNF | Comprobación prevista / situación |
+|---|---|---|
+| PNF-01 | RNF-01/02 | Acceso anónimo, entre usuarios y roles: verificado en escenarios específicos |
+| PNF-02 | RNF-03 | Revisar protección de contraseñas y logs: sin auditoría exhaustiva |
+| PNF-03 | RNF-04 | Referencias e identificadores inválidos: verificados |
+| PNF-04 | RNF-05/06 | Usabilidad y tamaños de pantalla: sin matriz sistemática de dispositivos |
+| PNF-05 | RNF-07/08 | Formatos, tamaños y autorización de imágenes: verificados en escenarios |
+| PNF-06 | RNF-09 | Medir rendimiento bajo escenario acordado: no ejecutado formalmente |
+| PNF-07 | RNF-10/12 | TypeScript, compilación, trazabilidad: comprobaciones ejecutadas |
+| PNF-08 | RNF-11 | Confirmaciones falsas y errores de persistencia: regresión ejecutada |
 
-## 4. Pruebas no funcionales
+### 3.2. Recorrido integral priorizado (E2E-PRINCIPAL)
 
-| ID | RNF | Método de prueba | Meta / situación |
-|---|---|---|---|
-| PNF-01 | RNF-01/02 | Acceso anónimo y escalada de rol | Rechazar todas las operaciones no autorizadas |
-| PNF-02 | RNF-03 | Revisión de almacenamiento y logs | No contener contraseñas en claro |
-| PNF-03 | RNF-04 | Enlaces a IDs inexistentes | No crear referencias huérfanas |
-| PNF-04 | RNF-05/06 | Recorrido manual en dos anchos de pantalla | Criterios de usabilidad por aprobar |
-| PNF-05 | RNF-07/08 | Archivos no permitidos; URL de archivo sin sesión | Límite y permisos por aprobar |
-| PNF-06 | RNF-09 | Medición repetida con escenario reproducible | Tiempo máximo y carga **por aprobar** |
-| PNF-07 | RNF-10/12 | Revisión de TypeScript, pruebas y trazabilidad | Sin errores bloqueantes según regla acordada |
-| PNF-08 | RNF-11 | Simular error de base de datos/servidor | No confirmar operación fallida |
+**Registro/login → equipo → tarea → estado → problema/diagnóstico → actividades/resultado → evidencia → finalización → detalle/historial.** Codex comprobó este flujo por recorridos funcionales reales y complementos simulados. No se dispone de un resultado individual certificado bajo cada ID CP; el contraste formal está en la matriz de criterios de la sección 5.
 
-## 5. Prueba integral prioritaria del MVP
+## 4. Evolución de la auditoría
 
-**Código:** E2E-PRINCIPAL.  
-**Precondición:** usuario técnico disponible; base de datos y almacenamiento configurados; permisos y datos de prueba definidos.
+**Auditoría inicial:** 5/12 HU cumplían; de 59 criterios, 56 cumplían, uno parcialmente, uno no cumplía y uno no estaba determinado. Se identificaron seis defectos (D01–D06).
 
-**Pasos:**
+**Correcciones autorizadas:** Codex modificó D01, D02, D03, D05 y D06; D04 quedó sin corregir por una decisión funcional pendiente. Se realizaron regresiones con pruebas automatizadas y simuladas.
 
-1. Iniciar sesión como técnico.
-2. Registrar un equipo de prueba.
-3. Crear una tarea vinculada con el equipo.
-4. Cambiar el estado de la tarea.
-5. Registrar problema y diagnóstico.
-6. Registrar intervención y resultado.
-7. Adjuntar evidencia válida (si HU09 está implementada).
-8. Finalizar la tarea respetando las reglas acordadas.
-9. Consultar detalle e historial del equipo.
-10. Confirmar que los registros se relacionan con el equipo y usuario correctos.
+**Validación final real (`QA_FINAL_B38CC043`):** Codex volvió a contrastar los 59 criterios con Jira y ejecutó recorridos autorizados con frontend, backend y MongoDB Atlas. El informe reportó el siguiente resultado.
 
-**Resultado esperado:** el recorrido completo se completa sin pérdida de datos ni acceso indebido. Si una HU no se ha implementado, registrar la limitación en vez de marcar la prueba como aprobada.
+## 5. Matriz final de cumplimiento funcional
 
-## 6. Datos, entornos y criterios de ejecución
+| HU | Funcionalidad | Criterios cumplidos | Resultado QA |
+|---|---|---:|---|
+| HU01 | Registro de usuario | 5/5 | Cumple |
+| HU02 | Inicio/cierre de sesión | 5/5 | Cumple |
+| HU03 | Registro de equipos | 5/5 | Cumple |
+| HU04 | Creación de tareas | 5/5 | Cumple |
+| HU05 | Consulta de tareas | 4/4 | Cumple |
+| HU06 | Gestión de estados | 5/5 | Cumple |
+| HU07 | Problema y diagnóstico | 5/5 | Cumple |
+| HU08 | Actividades y resultado | **4/5** | **Cumple parcialmente** |
+| HU09 | Evidencias | 5/5 | Cumple |
+| HU10 | Historial de equipo | 5/5 | Cumple |
+| HU11 | Detalle de tarea | 5/5 | Cumple |
+| HU12 | Supervisión | **4/5** | **Cumple parcialmente** |
+| **Total** | **12 historias** | **57/59** | **10 completas; 2 parciales** |
 
-- Utilizar **datos ficticios** (equipos de prueba, correos de ensayo, imágenes sin información confidencial).
-- Mantener entornos de desarrollo/prueba aislados de información productiva cuando corresponda.
-- Preparar al menos dos equipos y usuarios con roles diferentes para verificar separación de datos y permisos.
-- Registrar versión/commit, fecha, ejecutor, entorno, comandos utilizados y resultado.
-- Si una prueba automatizada falla, conservar log y referencia al defecto; después de corregir, volver a ejecutarla.
-- Clasificar cada caso como: **No ejecutado / Aprobado / Fallido / Bloqueado / No aplica (justificado)**.
+**Distribución de los 59 criterios:** 57 cumplidos; 1 incumplido; 1 no determinado; ninguno clasificado como parcialmente cumplido en la última evaluación.
 
-### 6.1. Formato de reporte de caso
+### Criterios que siguen abiertos
 
-```text
-Caso: CP-XX
-HU / criterios relacionados:
-Fecha y responsable:
-Versión / commit:
-Entorno y datos de prueba:
-Pasos ejecutados:
-Resultado esperado:
-Resultado observado:
-Estado:
-Defecto asociado (si aplica):
-Evidencia (captura/log/CI):
-Validación HITL:
-```
+**CA-HU08-04 — Fecha de actividad (no determinado).** La tarea conserva `createdAt`/`updatedAt`, pero no una fecha independiente de ejecución de la actividad. No se ha acordado qué fecha exige el criterio.
 
-## 7. Gestión de defectos
+**CA-HU12-05 — Supervisión como consulta (incumplido).** La supervisión permite consultar información, pero la misma pantalla también ofrece creación/asignación de tareas mediante `POST /api/admin/tasks`.
 
-Un defecto debe registrar descripción, severidad, pasos para reproducir, evidencia, componente afectado, HU/criterio, responsable, commit de corrección y resultado de regresión. Las categorías **bloqueante, alta, media, baja** se proponen para seguimiento; la clasificación final corresponde al equipo.
+La implementación principal de ambas HU existe; el equipo decidió no introducir nuevas modificaciones por tiempo disponible. Esto **no** cambia sus resultados de QA ni los criterios de Jira.
 
-Se recomienda bloquear la aceptación de una HU mientras sus criterios esenciales presenten fallos reproducibles.
+## 6. Registro de defectos
 
-## 8. Seguridad específica del uso de IA
+| ID | Hallazgo | Estado de la última regresión |
+|---|---|---|
+| D01 | Información de un usuario visible tras cambiar de sesión | **Corregido y verificado** |
+| D02 | IDs mal formados producían HTTP 500 | **Corregido y verificado** |
+| D03 | Cambios de documentación sin guardar y finalización de tarea | **Corregido y verificado** |
+| D04 | Asignación dentro de la vista de supervisión | **Pendiente** |
+| D05 | Diferencia entre `id` y `_id` en el contrato de usuario | **Corregido y verificado** |
+| D06 | Metadatos inconsistentes de evidencias entre vistas | **Corregido y verificado** |
 
-Si el **producto** incorpora LLM en una versión futura, será necesario probar inyección de prompts, permisos de herramientas, validación de salidas y filtración de datos. **El MVP vigente no obliga a incorporar LLM en su funcionalidad**, de modo que no se deben registrar como ejecutadas pruebas de un componente que no existe.
+La regresión final comprobó aislamiento entre técnicos en la misma pestaña, rechazo de identificadores inválidos (400) y recursos inexistentes (404), persistencia después de guardar, contrato de identidad y metadatos/recuperación de evidencias. Las respuestas asíncronas tardías se evaluaron también mediante simulación.
 
-Para el **proceso de desarrollo aumentado**, cualquier caso de prueba propuesto o código de pruebas generado por IA deberá revisarse y ejecutarse realmente. No equivale a evidencia una respuesta de IA que diga que las pruebas deberían pasar.
+## 7. Pruebas ejecutadas y condiciones
 
-## 9. Evidencia y validación HITL
-
-| Registro | Contenido |
+| Conjunto reportado | Resultado |
 |---|---|
-| Entrada a la IA | Criterios, código o especificación entregada (sin secretos) |
-| Respuesta original | Propuesta de casos, scripts o diagnóstico |
-| Validación humana | Qué se aceptó/modificó/rechazó y motivo |
-| Ejecución | Comando, fecha, commit, entorno, salida real |
-| Riesgos | Errores o supuestos equivocados propuestos por IA |
-| Operación | Capturas, registros o video de demostración reales |
+| Unitarias backend | **6 aprobadas** |
+| HTTP con modelos simulados | **8 aprobadas** |
+| **Total backend** | **14 aprobadas** |
+| Navegador con API simulada | **10 escenarios aprobados** |
+| Builds de frontend y backend; comprobación TypeScript | Correctos |
+| Bundle de producción Vite; `git diff --check` | Correctos |
+| Recorridos con frontend, backend y Atlas reales | Ejecutados y contrastados con los 59 criterios |
 
-**Ubicaciones:** `docs/evidencias-ia/etapas/06-pruebas/` y `docs/evidencias-ia/historias-usuario/HUxx/`. El **código de pruebas** debe permanecer con el código fuente del repositorio; las evidencias deben vincular a él, sin duplicarlo innecesariamente.
+No se deduce cobertura porcentual del código a partir de estas cifras. Los 24 CP son un **catálogo planificado** y no deben declararse 24/24 aprobados sin un registro caso por caso.
 
-## 10. Condiciones de salida hacia despliegue y evaluación
+**Entorno de la validación final:** rama local `fix/mejoras-integrales-mvp`, HEAD `6021f89` más cambios aún no confirmados. **El commit HEAD por sí solo no reproduce la versión corregida**. El informe final de Codex puede estar en el historial de la interacción; no se presumen disponibles todos sus logs, JSON o capturas en el checkout.
 
-- Prueba integral prioritaria ejecutada y registrada.
-- Criterios de aceptación de HU incluidas en la entrega aprobados sin defectos bloqueantes.
-- Errores conocidos y limitaciones documentados.
-- Pruebas de autenticación, permisos y archivos ejecutadas según capacidades realmente implementadas.
-- Evidencias enlazadas a versiones exactas del código.
+**Control de datos:** se usaron cuentas y registros QA autorizados; Codex reportó que no modificó información preexistente, no borró registros ni cerró sesiones administrativas durante esa ejecución.
 
-**Estado actual de resultados:** sin datos verificados de ejecución aportados para este documento. La tabla de resultados se completará después de ejecutar el software.
+## 8. Evidencias y HITL
+
+- Auditoría inicial: `evidencias-ia/etapas/06-pruebas/informe-funcional-71f7a90f.md`.
+- Regresión: `evidencias-ia/etapas/06-pruebas/informe-regresion-mejoras-integrales.md`.
+- Correcciones: `evidencias-ia/etapas/05-desarrollo/correcciones/mejoras-integrales-mvp/`.
+- Fuente oficial de criterios: Jira `MGDST-1` a `MGDST-12`.
+- Ejecución final: informe de Codex `QA_FINAL_B38CC043` (confirmar su archivo o conservarlo como evidencia).
+
+Las decisiones del equipo incluyen corregir los cinco defectos autorizados, mantener la unicidad de identificador por técnico y conservar HU08/HU12 sin nuevas correcciones. El resultado de una IA no se presenta como aceptación formal del equipo.
+
+## 9. Condición de salida
+
+La etapa proporciona evidencia para [Evaluación](09-evaluacion.md), pero **no avala aceptación funcional global**: faltan la definición de HU08 y el cumplimiento de HU12. Además, las pruebas de un entorno público se realizarán únicamente después del [despliegue](08-despliegue.md).

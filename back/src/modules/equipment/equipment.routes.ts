@@ -5,6 +5,8 @@ import { EquipmentModel } from '../../models/Equipment'
 import { TaskModel } from '../../models/Task'
 import { HttpError } from '../../utils/HttpError'
 import { asyncHandler } from '../../utils/asyncHandler'
+import { validateObjectId } from '../../middleware/validateObjectId'
+import { withTaskEvidence } from '../tasks/taskEvidence'
 
 const router = Router()
 const equipmentSchema = z.object({
@@ -17,6 +19,7 @@ const equipmentSchema = z.object({
 })
 
 router.use(requireAuth)
+router.param('id', validateObjectId)
 
 router.get('/', asyncHandler(async (request, response) => {
   const equipment = await EquipmentModel.find({ owner: request.authUser!.id }).sort({ createdAt: -1 }).lean()
@@ -32,7 +35,7 @@ router.get('/:id/history', asyncHandler(async (request, response) => {
     .populate('equipment', 'assetTag name type brand model serialNumber')
     .sort({ updatedAt: -1, createdAt: -1 })
     .lean()
-  response.json({ equipment, tasks })
+  response.json({ equipment, tasks: await withTaskEvidence(tasks) })
 }))
 
 router.post('/', asyncHandler(async (request, response) => {

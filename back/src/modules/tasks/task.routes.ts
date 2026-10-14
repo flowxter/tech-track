@@ -9,6 +9,8 @@ import { HttpError } from '../../utils/HttpError'
 import { asyncHandler } from '../../utils/asyncHandler'
 import { canTransitionTaskStatus } from './taskStatus'
 import { isValidEvidenceImage } from './evidenceValidation'
+import { validateObjectId } from '../../middleware/validateObjectId'
+import { withTaskEvidence } from './taskEvidence'
 
 const router = Router()
 const evidenceUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1 } })
@@ -27,27 +29,15 @@ const documentationSchema = z.object({
 }).refine((value) => Object.keys(value).length > 0, 'Incluye al menos un campo para actualizar.')
 
 router.use(requireAuth)
+router.param('id', validateObjectId)
+router.param('evidenceId', validateObjectId)
 
 async function taskWithEvidence(taskId: string, ownerId: string) {
   const task = await TaskModel.findOne({ _id: taskId, owner: ownerId })
     .populate('equipment', 'assetTag name type brand model serialNumber')
     .lean()
   if (!task) throw new HttpError(404, 'No se encontró la tarea solicitada.')
-  const evidence = await EvidenceModel.find({ task: task._id, owner: ownerId })
-    .select('filename mimeType size uploadedAt')
-    .sort({ uploadedAt: 1 })
-    .lean()
-  return {
-    ...task,
-    evidence: evidence.map((item) => ({
-      _id: String(item._id),
-      filename: item.filename,
-      mimeType: item.mimeType,
-      size: item.size,
-      uploadedAt: item.uploadedAt,
-      url: `/tasks/${taskId}/evidence/${item._id}/content`,
-    })),
-  }
+  return (await withTaskEvidence([task]))[0]
 }
 
 router.get('/', asyncHandler(async (request, response) => {
@@ -55,7 +45,7 @@ router.get('/', asyncHandler(async (request, response) => {
     .populate('equipment', 'assetTag name type brand model serialNumber')
     .sort({ createdAt: -1 })
     .lean()
-  response.json({ tasks })
+  response.json({ tasks: await withTaskEvidence(tasks) })
 }))
 
 router.post('/', asyncHandler(async (request, response) => {

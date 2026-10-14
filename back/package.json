@@ -8,7 +8,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "seed:test-user": "tsx src/scripts/seedTestUser.ts",
-    "test": "tsx --test src/modules/tasks/task-status.test.ts src/modules/tasks/evidence-validation.test.ts"
+    "test": "tsx --test src/modules/tasks/task-status.test.ts src/modules/tasks/evidence-validation.test.ts src/regression.test.ts"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",

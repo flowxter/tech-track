@@ -1,6 +1,6 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Activity, ArrowRight, Check, CircleHelp, Laptop, LockKeyhole, Mail, UserRound } from 'lucide-react'
-import { api } from '../api'
+import { createApi } from '../api'
 import type { AuthResult } from '../types'
 
 type AuthScreenProps = { onAuthenticated: (token: string, user: AuthResult['user']) => void }
@@ -10,12 +10,18 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const pendingRequest = useRef<AbortController | null>(null)
+
+  useEffect(() => () => pendingRequest.current?.abort(), [])
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (submitting) return
     setError('')
     setSubmitting(true)
+    const controller = new AbortController()
+    pendingRequest.current = controller
+    const api = createApi(controller.signal)
     const values = new FormData(event.currentTarget)
     const email = String(values.get('email')).trim()
     const password = String(values.get('password'))
@@ -25,9 +31,11 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
         : await api.login({ email, password })
       onAuthenticated(result.token, result.user)
     } catch (reason) {
+      if (controller.signal.aborted) return
       setError(reason instanceof Error ? reason.message : 'No se pudo completar el acceso.')
     } finally {
-      setSubmitting(false)
+      if (!controller.signal.aborted) setSubmitting(false)
+      if (pendingRequest.current === controller) pendingRequest.current = null
     }
   }
 
