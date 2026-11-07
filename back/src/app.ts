@@ -9,6 +9,7 @@ import authRoutes from './modules/auth/auth.routes'
 import adminRoutes from './modules/admin/admin.routes'
 import equipmentRoutes from './modules/equipment/equipment.routes'
 import taskRoutes from './modules/tasks/task.routes'
+import voiceRoutes from './modules/voice/voice.routes'
 import { HttpError } from './utils/HttpError'
 
 const app = express()
@@ -24,6 +25,7 @@ app.use('/api/auth', authRoutes)
 app.use('/api/admin', adminRoutes)
 app.use('/api/equipment', equipmentRoutes)
 app.use('/api/tasks', taskRoutes)
+app.use('/api/voice', voiceRoutes)
 
 const errorHandler: ErrorRequestHandler = (error: unknown, _request, response, _next) => {
   if (error instanceof HttpError) {

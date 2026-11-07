@@ -306,6 +306,25 @@ h1, h2, h3, p { margin-top: 0; }
 .auth-footer span:first-child { font-weight: 700; }
 .auth-footer b { padding: 0 3px; color: #c79458; }
 
+.page-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.voice-button { min-height: 28px; padding: 0 10px; display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; border: 1px solid #cfe0d4; border-radius: 5px; color: #2f6a52; background: #f1f7f2; font-size: 9px; font-weight: 600; white-space: nowrap; }
+.voice-button:hover:not(:disabled) { background: #e4f0e7; }
+.voice-button:disabled { cursor: not-allowed; opacity: .55; }
+.voice-compact { width: 26px; min-height: 26px; padding: 0; justify-content: center; }
+.voice-compact.voice-recording, .voice-compact.voice-processing { width: auto; padding: 0 8px; }
+.voice-recording { border-color: #ecc5ba; color: #a4442e; background: #fdf0ec; animation: voice-pulse 1.4s ease-in-out infinite; }
+.voice-recording:hover:not(:disabled) { background: #fbe5df; }
+.voice-processing:disabled { cursor: wait; }
+.voice-spinner { animation: spin .8s linear infinite; }
+@keyframes voice-pulse { 50% { box-shadow: 0 0 0 4px rgba(164, 68, 46, .14); } }
+.voice-draft { padding: 9px 10px; display: flex; align-items: center; gap: 10px; border: 1px dashed #d5e3d9; border-radius: 5px; background: #fafcfa; }
+.voice-draft > span { min-width: 0; color: #7a8a80; font-size: 9px; line-height: 1.45; }
+.detail-voice { margin-top: 14px; display: grid; justify-items: start; gap: 10px; }
+.detail-voice .voice-draft { width: 100%; }
+.dictable-field { min-width: 0; display: grid; gap: 6px; }
+.dictable-label { min-height: 26px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.dictable-label label { color: #596d60; font-size: 9px; font-weight: 600; }
+
 @media (max-width: 1060px) {
   .sidebar { width: 218px; flex-basis: 218px; }
   .topbar { padding: 0 28px; }
@@ -344,7 +363,11 @@ h1, h2, h3, p { margin-top: 0; }
   .page-heading { margin-bottom: 19px; align-items: flex-start; }
   .page-heading h1 { font-size: 25px; }
   .page-description { max-width: 235px; font-size: 10px; }
-  .page-heading > .primary-button { min-height: 34px; margin-top: 15px; padding-inline: 9px; gap: 5px; font-size: 9px; white-space: nowrap; }
+  .page-heading > .primary-button, .page-actions > button { min-height: 34px; padding-inline: 9px; gap: 5px; font-size: 9px; white-space: nowrap; }
+  .page-heading > .primary-button, .page-actions { margin-top: 15px; }
+  .page-heading:has(.page-actions) { flex-direction: column; align-items: stretch; gap: 0; }
+  .page-actions { justify-content: flex-start; }
+  .voice-draft { align-items: flex-start; flex-direction: column; gap: 6px; }
   .metric-grid { gap: 8px; margin-bottom: 15px; }
   .metric-card { min-height: 112px; padding: 11px; }
   .metric-icon { width: 26px; height: 26px; margin-bottom: 7px; }

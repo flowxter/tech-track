@@ -11,6 +11,8 @@ import { EvidenceModel } from './models/Evidence'
 // No dotenv ni connect(): ninguna prueba usa credenciales o registros compartidos.
 process.env.MONGODB_URI = 'mongodb://127.0.0.1:1/unused-regression'
 process.env.JWT_SECRET = 'isolated-regression-fixture-secret-only'
+delete process.env.ASSEMBLYAI_API_KEY
+delete process.env.ELEVENLABS_API_KEY
 mongoose.set('bufferCommands', false)
 const owner = '111111111111111111111111'
 const foreign = '222222222222222222222222'
@@ -109,6 +111,22 @@ test('D01/D02: tarea y equipo ajenos conservan filtros de propietario y 404', as
   assert.equal((await call(`/tasks/${taskId}/documentation`, 'PATCH', { diagnosis: 'forbidden' })).status, 404)
   assert.equal((await call(`/tasks/${taskId}/status`, 'PATCH', { status: 'COMPLETED' })).status, 404)
   assert.equal((await call(`/tasks/${taskId}/evidence/${evidenceId}/content`)).status, 404)
+})
+
+test('Voz: las rutas exigen sesión, y el borrador de asignación exige rol ADMIN', async () => {
+  for (const path of ['/voice/transcribe', '/voice/task-draft', '/voice/assignment-draft', '/voice/documentation-draft', '/voice/speech']) {
+    assert.equal((await call(path, 'POST', undefined, null)).status, 401, path)
+  }
+  assert.equal((await call('/voice/assignment-draft', 'POST')).status, 403)
+})
+
+test('Voz: sin claves configuradas responde 503 y el resto de la API sigue disponible', async () => {
+  const audio = new FormData()
+  audio.append('audio', new Blob(['fixture'], { type: 'audio/webm' }), 'dictado.webm')
+  const dictation = await fetch(`${base}/voice/transcribe`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: audio })
+  assert.equal(dictation.status, 503)
+  assert.equal((await call('/voice/speech', 'POST', { text: 'Hola' })).status, 503)
+  assert.equal((await call('/auth/me')).status, 200)
 })
 
 test('D05: /auth/me mantiene contrato público id sin exponer _id o tokenVersion', async () => {
