@@ -8,6 +8,7 @@ Aplicación web para gestionar y dar trazabilidad a intervenciones de soporte y 
 - **Backend:** Node.js, Express 5 y TypeScript.
 - **Persistencia:** MongoDB Atlas con Mongoose.
 - **Validación y seguridad:** Zod, bcrypt, JWT, Helmet, CORS y limitación de intentos de acceso.
+- **Voz (opcional):** AssemblyAI para transcribir dictados y ElevenLabs para leer en voz alta.
 
 ## Estructura
 
@@ -17,6 +18,9 @@ front/
     api.ts                 Cliente HTTP y manejo común de errores
     components/
       AuthScreen.tsx       Registro e inicio de sesión
+      NewTaskForm.tsx      Nueva tarea, escrita o dictada
+      AssignmentForm.tsx   Asignación administrativa, escrita o dictada
+    voice/                 Grabación, botones de dictado, lectura en voz alta y guiones
     TechTrackApp.tsx       Consola de tareas y equipos
     TechTrackApp.css       Sistema visual responsive
     types.ts               Contratos del cliente
@@ -29,6 +33,7 @@ back/
       auth/                Registro, login y cierre de sesión
       equipment/           Inventario de equipos
       tasks/               Tareas, documentación y transiciones
+      voice/               Clientes de AssemblyAI y ElevenLabs e intérprete de dictados
     utils/                 Errores y controladores async
 ```
 
@@ -60,16 +65,39 @@ La API queda en `http://localhost:4000` y el frontend en `http://localhost:5173`
 
 No guardes el `.env` ni credenciales reales en el repositorio. El archivo `.env.example` solo contiene marcadores.
 
+## Funciones de voz
+
+Son opcionales y se activan con variables de `back/.env`. Las claves solo existen en el servidor: el navegador nunca las recibe.
+
+| Variable | Efecto |
+| --- | --- |
+| `ASSEMBLYAI_API_KEY` | Activa el dictado. Sin ella, las rutas de transcripción responden 503 y la aplicación sigue funcionando |
+| `ELEVENLABS_API_KEY` | Activa la voz de ElevenLabs. Sin ella, o si falla, la lectura usa la voz del navegador |
+| `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL_ID` | Opcionales: voz y modelo de ElevenLabs |
+
+| Función | Dónde | Cómo se usa |
+| --- | --- | --- |
+| Dictado por campo | Documentación y descripciones | El micrófono de cada campo agrega el texto dictado a lo ya escrito |
+| Crear tarea por voz | Nueva tarea | «Equipo PC-001. Título: cambiar disco. Descripción: hace ruido.» Sin palabras clave, la primera frase es el título |
+| Asignar tarea por voz | Supervisión (`ADMIN`) | «Asignar a Ana. Equipo PC-001. Título: mantenimiento preventivo.» |
+| Informe por voz | Detalle de tarea | Se dicta de corrido y se reparte por campos: «El problema era… Encontré… Hice… Como resultado… Recomiendo…» o «Diagnóstico… Actividades… Resultado… Observaciones…» |
+| Resumen hablado | Panel de tareas | «Escuchar resumen» lee los conteos y las tareas por atender, primero las que están en progreso y luego las pendientes más antiguas |
+| Lectura de tarea | Detalle y revisión administrativa | «Leer tarea» lee la intervención y omite las secciones vacías |
+
+El dictado nunca guarda por sí solo: rellena el formulario y la persona revisa y confirma. El equipo o técnico solo se selecciona si la coincidencia es única; ante una ambigüedad queda sin seleccionar. Cada grabación dura como máximo 3 minutos y cada cuenta tiene un cupo de 60 solicitudes de voz cada 15 minutos.
+
+TechTrack no almacena el audio, pero la voz y los textos leídos se envían a AssemblyAI y ElevenLabs, sujetos a sus políticas de datos. El micrófono requiere HTTPS o `localhost`.
+
 ## Despliegue en Vercel
 
 El repositorio puede desplegarse como dos proyectos Vercel conectados al mismo repositorio:
 
 1. **API:** crea un proyecto con `back` como **Root Directory** y deja que Vercel detecte Express. La entrada `src/app.ts` exporta la aplicación; la conexión MongoDB se asegura por solicitud y se reutiliza entre invocaciones calientes. No configures un comando de salida estática.
-2. En el proyecto de la API agrega `MONGODB_URI`, `JWT_SECRET` (aleatorio, mínimo 32 caracteres), `JWT_EXPIRES_IN=8h` y `CLIENT_ORIGIN` con el origen exacto del frontend desplegado, sin barra final. Vercel administra `PORT` automáticamente.
+2. En el proyecto de la API agrega `MONGODB_URI`, `JWT_SECRET` (aleatorio, mínimo 32 caracteres), `JWT_EXPIRES_IN=8h` y `CLIENT_ORIGIN` con el origen exacto del frontend desplegado, sin barra final. Para las funciones de voz agrega también `ASSEMBLYAI_API_KEY` y `ELEVENLABS_API_KEY`. Vercel administra `PORT` automáticamente.
 3. **Frontend:** crea otro proyecto del mismo repositorio, con `front` como **Root Directory**, `npm run build` como comando de build y `dist` como directorio de salida.
 4. En el frontend agrega `VITE_API_URL=https://<dominio-api>.vercel.app/api`. Después del primer despliegue, copia el dominio asignado y úsalo como `CLIENT_ORIGIN` en el backend; vuelve a desplegar ambos proyectos tras guardar las variables.
 
-La API también puede permanecer en Render; en ese caso, `CLIENT_ORIGIN` debe ser el dominio Vercel y `VITE_API_URL` debe apuntar al dominio Render. Nunca expongas `MONGODB_URI` ni `JWT_SECRET` como variables `VITE_*`.
+La API también puede permanecer en Render; en ese caso, `CLIENT_ORIGIN` debe ser el dominio Vercel y `VITE_API_URL` debe apuntar al dominio Render. Nunca expongas `MONGODB_URI`, `JWT_SECRET` ni las claves de voz como variables `VITE_*`.
 
 ## Flujo implementado
 
@@ -113,6 +141,11 @@ Todas las rutas salvo salud, registro y login requieren `Authorization: Bearer <
 | POST | `/api/admin/tasks` | Crear y asignar una tarea a un técnico con un equipo de su inventario; requiere rol `ADMIN` |
 | GET | `/api/admin/tasks/:id` | Revisar documentación, estado e imágenes de cualquier tarea; requiere rol `ADMIN` |
 | GET | `/api/admin/tasks/:taskId/evidence/:evidenceId/content` | Leer evidencia desde la revisión administrativa autenticada |
+| POST | `/api/voice/transcribe` | Transcribir una grabación (multipart `audio`, máximo 4 MB) |
+| POST | `/api/voice/task-draft` | Transcribir y proponer un borrador de tarea con los equipos propios |
+| POST | `/api/voice/assignment-draft` | Transcribir y proponer una asignación con técnicos y sus equipos; requiere rol `ADMIN` |
+| POST | `/api/voice/documentation-draft` | Transcribir y repartir un informe entre los campos de la documentación |
+| POST | `/api/voice/speech` | Generar audio MP3 de un texto de hasta 2500 caracteres |
 
 Las imágenes se guardan como binario en MongoDB y no se sirven desde una ruta pública. Para probar la vista administrativa localmente, el script `npm run seed:test-user --prefix back` admite `TEST_USER_ROLE=ADMIN`; por defecto crea un técnico. Define `TEST_USER_PASSWORD` solo en el `.env` local y no habilites este mecanismo como ruta pública.
 
@@ -126,4 +159,4 @@ npm run build --prefix back
 npm test --prefix back
 ```
 
-Las pruebas unitarias cubren transiciones de estado y firmas de imágenes permitidas/rechazadas. Para QA de integración, ejecutar el flujo con MongoDB disponible y comprobar guardado y recarga, carga múltiple, archivo sobredimensionado/corrupto, aislamiento entre cuentas, historial vacío y acceso técnico frente a administrativo.
+Las pruebas unitarias cubren transiciones de estado, firmas de imágenes permitidas/rechazadas, los clientes de voz (sin llamar a los proveedores) y la interpretación de dictados. `npm run test:regression --prefix front` ejercita la interfaz en Chromium con micrófono simulado y API simulada; requiere Playwright (`TECHTRACK_TEST_NODE_MODULES` indica dónde está instalado y `TECHTRACK_TEST_BROWSER_CHANNEL=msedge` usa el navegador del sistema). Para QA de integración, ejecutar el flujo con MongoDB disponible y comprobar guardado y recarga, carga múltiple, archivo sobredimensionado/corrupto, aislamiento entre cuentas, historial vacío y acceso técnico frente a administrativo.

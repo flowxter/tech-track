@@ -44,6 +44,8 @@ Las instrucciones de ejecución local completas pertenecen a `README.md` y `docu
 | Backend | `JWT_SECRET` | Firma de tokens; secreto privado robusto |
 | Backend | `JWT_EXPIRES_IN` | Duración del token (implementación: `8h` por defecto) |
 | Backend | `CLIENT_ORIGIN` | **Origen exacto** del frontend público para CORS |
+| Backend (opcional) | `ASSEMBLYAI_API_KEY` | Activa el dictado por voz; secreto privado |
+| Backend (opcional) | `ELEVENLABS_API_KEY` | Activa la voz de ElevenLabs; sin ella se usa la del navegador; secreto privado |
 | Backend local | `PORT` | Puerto de ejecución local; Vercel gestiona el servicio público |
 | Frontend (`front/`) | `VITE_API_URL` | URL del backend **con `/api`** al final |
 

@@ -48,3 +48,12 @@ export type AdminActivity = Task & { owner: Pick<User, '_id' | 'name' | 'email'>
 export type AdminEquipment = Equipment & { owner: string }
 
 export type AuthResult = { token: string; user: User }
+
+export type Documentation = Pick<Task, 'problemReported' | 'diagnosis' | 'activities' | 'result' | 'recommendations'>
+
+export type VoiceTaskDraft = {
+  text: string
+  draft: { title: string; description: string; equipmentId: string | null; technicianId: string | null }
+}
+
+export type VoiceDocumentationDraft = { text: string; sections: Partial<Documentation> }

@@ -1,4 +1,4 @@
-import type { AdminActivity, AdminEquipment, AuthResult, Equipment, Task, TaskStatus, User } from './types'
+import type { AdminActivity, AdminEquipment, AuthResult, Equipment, Task, TaskStatus, User, VoiceDocumentationDraft, VoiceTaskDraft } from './types'
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000/api'
 
@@ -25,10 +25,34 @@ async function sendRequest<T>(path: string, options: RequestInit = {}, token?: s
   return payload as T
 }
 
+function audioBody(audio: Blob) {
+  const body = new FormData()
+  body.append('audio', audio, 'dictado')
+  return body
+}
+
 /** Cada espacio autenticado tiene su propio transporte cancelable. */
 export function createApi(signal?: AbortSignal) {
   const request = <T>(path: string, options: RequestInit = {}, token?: string) => sendRequest<T>(path, options, token, signal)
   return {
+    transcribeAudio: (token: string, audio: Blob) =>
+      request<{ text: string }>('/voice/transcribe', { method: 'POST', body: audioBody(audio) }, token).then(({ text }) => text),
+    dictateTaskDraft: (token: string, audio: Blob) =>
+      request<VoiceTaskDraft>('/voice/task-draft', { method: 'POST', body: audioBody(audio) }, token),
+    dictateAssignmentDraft: (token: string, audio: Blob) =>
+      request<VoiceTaskDraft>('/voice/assignment-draft', { method: 'POST', body: audioBody(audio) }, token),
+    dictateDocumentationDraft: (token: string, audio: Blob) =>
+      request<VoiceDocumentationDraft>('/voice/documentation-draft', { method: 'POST', body: audioBody(audio) }, token),
+    synthesizeSpeech: async (token: string, text: string) => {
+      const response = await fetch(`${API_URL}/voice/speech`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ text }), signal })
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({})) as { message?: string }
+        throw new ApiError(payload.message ?? 'No se pudo generar la lectura.', response.status)
+      }
+      const blob = await response.blob()
+      signal?.throwIfAborted()
+      return blob
+    },
     register: (data: { name: string; email: string; password: string }) =>
       request<AuthResult>('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
     login: (data: { email: string; password: string }) =>

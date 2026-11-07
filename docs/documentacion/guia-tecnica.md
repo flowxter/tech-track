@@ -15,6 +15,7 @@ TechTrack es una aplicación web para registrar equipos informáticos y document
 | Persistencia | MongoDB Atlas, Mongoose |
 | Seguridad y validación | JWT, bcrypt, Zod, Helmet, CORS |
 | Archivos de evidencia | Multer, Sharp; almacenamiento en MongoDB |
+| Voz (opcional) | AssemblyAI (voz a texto), ElevenLabs (texto a voz), MediaRecorder y Web Speech en el navegador |
 | Repositorio | GitHub |
 
 La solución utiliza una **arquitectura web cliente-servidor**: el frontend consume una API HTTP/JSON, que aplica las reglas de negocio y accede a MongoDB. No es una arquitectura de microservicios.
@@ -27,6 +28,7 @@ tech-track/
 │   └── src/
 │       ├── api.ts              # Cliente HTTP
 │       ├── components/         # Componentes de interfaz
+│       ├── voice/              # Grabación, dictado y lectura en voz alta
 │       ├── TechTrackApp.tsx    # Consola principal
 │       └── types.ts            # Tipos del frontend
 ├── back/
@@ -34,7 +36,7 @@ tech-track/
 │       ├── config/             # Variables de entorno y conexión
 │       ├── middleware/         # Autenticación y autorización
 │       ├── models/             # Modelos de MongoDB
-│       ├── modules/            # Autenticación, equipos, tareas y administración
+│       ├── modules/            # Autenticación, equipos, tareas, administración y voz
 │       ├── app.ts              # Rutas y manejo de errores
 │       └── server.ts           # Inicio del servidor
 └── docs/                       # Documentación y evidencias
@@ -72,6 +74,9 @@ Editar `back/.env` con los valores propios del entorno:
 | `MONGODB_URI` | Cadena de conexión privada a MongoDB Atlas |
 | `JWT_SECRET` | Secreto de firma de tokens, de al menos 32 caracteres |
 | `JWT_EXPIRES_IN` | Vigencia del token; por defecto, `8h` |
+| `ASSEMBLYAI_API_KEY` | Opcional. Activa el dictado; sin ella, esas rutas responden 503 |
+| `ELEVENLABS_API_KEY` | Opcional. Activa la voz de ElevenLabs; sin ella, se lee con la voz del navegador |
+| `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL_ID` | Opcionales. Voz y modelo de ElevenLabs |
 
 El archivo `.env.example` sirve como plantilla: **sus marcadores no son credenciales funcionales**. No publicar `back/.env`, contraseñas, tokens ni claves en GitHub.
 
@@ -112,10 +117,22 @@ La ruta `/api/health` responde con el estado de la API. Su resultado no reemplaz
 | Tareas | Creación, consulta, cambio de estado y documentación | `/api/tasks`, `/api/tasks/:id`, `/api/tasks/:id/status`, `/api/tasks/:id/documentation` |
 | Evidencias | Carga y lectura autenticada de imágenes | `/api/tasks/:id/evidence`, `/api/tasks/:id/evidence/:evidenceId/content` |
 | Administración | Consulta de actividades y asignación de tareas | `/api/admin/activities`, `/api/admin/tasks` |
+| Voz | Transcripción, borradores por dictado y lectura en voz alta | `/api/voice/transcribe`, `/api/voice/task-draft`, `/api/voice/assignment-draft`, `/api/voice/documentation-draft`, `/api/voice/speech` |
 
 La mayoría de las rutas exige el encabezado `Authorization: Bearer <token>`. El backend diferencia los roles `TECHNICIAN` y `ADMIN`.
 
 Los estados de una tarea son **Pendiente → En progreso → Completada**. Las imágenes admitidas son JPEG, PNG y WEBP, con límite de **5 MB por archivo**; se almacenan en MongoDB y su lectura requiere autenticación.
+
+**Módulo de voz.** El navegador graba con `MediaRecorder` y envía el audio a la API, que lo transcribe con AssemblyAI y devuelve el texto o un borrador. Las claves permanecen en el servidor. La capa se divide así:
+
+| Archivo en `back/src/modules/voice/` | Responsabilidad |
+|---|---|
+| `voice.routes.ts` | Autenticación, cupo por usuario, recepción del audio y respuestas HTTP |
+| `assemblyAiClient.ts`, `elevenLabsClient.ts` | Comunicación con cada proveedor y traducción de sus errores |
+| `taskDictation.ts`, `documentationDictation.ts` | Reglas para convertir un dictado en un borrador; no dependen del proveedor |
+| `spokenText.ts` | Utilidades compartidas: palabras clave habladas y comparación de identificadores |
+
+Un dictado nunca modifica datos por sí solo: rellena el formulario para que la persona lo revise y confirme. La interpretación se basa en reglas y no en un modelo de lenguaje, por lo que es predecible y no tiene costo adicional, pero depende de que se usen las palabras clave o frases previstas.
 
 **Referencia funcional:** HU01–HU12 en Jira (`MGDST-1` a `MGDST-12`). HU10 corresponde al **historial del equipo** y HU11 al **detalle de tarea**, aunque el README del repositorio presenta esos dos números intercambiados.
 
@@ -147,6 +164,8 @@ Los procedimientos y hallazgos se documentan en `docs/evidencias-ia/etapas/06-pr
 - El cierre de sesión revoca los tokens existentes del usuario; evitar hacerlo sobre cuentas administrativas compartidas durante pruebas.
 - Las cuentas y registros QA deben identificarse y mantenerse separados de la información del equipo.
 - El uso de JWT en almacenamiento del navegador corresponde al alcance actual del MVP; requiere revisión antes de un entorno de producción.
+- La voz dictada y los textos leídos se envían a AssemblyAI y ElevenLabs. TechTrack no almacena el audio, pero no debe dictarse información sensible sin revisar las políticas de datos de esos proveedores.
+- El cupo de voz (60 solicitudes cada 15 minutos por cuenta) se lleva en memoria; en funciones serverless es por instancia, así que limita el abuso de forma aproximada y no sustituye una alerta de consumo en cada proveedor.
 
 **Limitaciones identificadas en las pruebas:**
 

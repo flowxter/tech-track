@@ -13,7 +13,8 @@ const server = await createServer({ root: fileURLToPath(new URL('..', import.met
   define: { 'import.meta.env.VITE_API_URL': JSON.stringify('http://techtrack.mock.invalid/api') } })
 await server.listen()
 const address = server.httpServer.address()
-const browser = await chromium.launch({ headless: true, ...(process.env.TECHTRACK_TEST_BROWSER_CHANNEL ? { channel: process.env.TECHTRACK_TEST_BROWSER_CHANNEL } : {}) })
+// El micrófono simulado permite ejercitar MediaRecorder sin hardware ni permisos manuales.
+const browser = await chromium.launch({ headless: true, args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'], ...(process.env.TECHTRACK_TEST_BROWSER_CHANNEL ? { channel: process.env.TECHTRACK_TEST_BROWSER_CHANNEL } : {}) })
 const results = []
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 const stamp = '2000-01-01T00:00:00.000Z'
@@ -28,10 +29,10 @@ function fixtures(actor) {
   return { task, equipment }
 }
 async function setup(options = {}) {
-  const context = await browser.newContext()
+  const context = await browser.newContext({ permissions: ['microphone'] })
   const page = await context.newPage()
   page.setDefaultTimeout(10000)
-  const state = { A: fixtures('A'), B: fixtures('B'), statusWrites: 0, docsWrites: 0, detailsStarted: 0, historyStarted: 0, imageStarted: 0, imageURLs: 0, revokedURLs: 0 }
+  const state = { A: fixtures('A'), B: fixtures('B'), statusWrites: 0, docsWrites: 0, detailsStarted: 0, historyStarted: 0, imageStarted: 0, imageURLs: 0, revokedURLs: 0, voiceUploads: [], assignments: [] }
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   await page.addInitScript(() => {
@@ -62,7 +63,27 @@ async function setup(options = {}) {
     }
     if (path === '/auth/me') {
       const { _id, ...profile } = profiles[actor]
-      return json({ user: { id: _id, ...profile } })
+      return json({ user: { id: _id, ...profile, ...(options.admin ? { role: 'ADMIN' } : {}) } })
+    }
+    if (path === '/voice/speech') {
+      state.speechText = request.postDataJSON().text
+      if (options.elevenLabsConfigured) { try { await route.fulfill({ status: 200, contentType: 'audio/mpeg', body: Buffer.from('fixture') }) } catch {} return }
+      return json({ message: 'La voz de ElevenLabs no está configurada en el servidor.' }, 503)
+    }
+    if (path.startsWith('/voice/')) {
+      state.voiceUploads.push({ path, contentType: request.headers()['content-type'] })
+      await delay(options.voiceDelay ?? 0)
+      if (options.voiceError) return json({ message: options.voiceError }, 422)
+      if (path === '/voice/transcribe') return json({ text: 'Texto dictado.' })
+      if (path === '/voice/documentation-draft') return json({ text: 'x', sections: { diagnosis: 'Fuente dañada.', result: 'Enciende.' } })
+      if (path === '/voice/task-draft') return json({ text: 'x', draft: { title: 'Cambiar disco', description: 'Hace ruido.', equipmentId: data.equipment._id, technicianId: null } })
+      if (path === '/voice/assignment-draft') return json({ text: 'x', draft: { title: 'Cambiar pantalla', description: '', equipmentId: state.B.equipment._id, technicianId: profiles.B._id } })
+    }
+    if (path === '/admin/technicians') return json({ technicians: [profiles.A, profiles.B], equipment: [{ ...state.A.equipment, owner: profiles.A._id }, { ...state.B.equipment, owner: profiles.B._id }] })
+    if (path === '/admin/activities') return json({ activities: [] })
+    if (path === '/admin/tasks') {
+      state.assignments.push(request.postDataJSON())
+      return json({ message: 'Tarea asignada a Técnico B.', task: { ...state.B.task, owner: profiles.B } }, 201)
     }
     if (path === '/auth/logout') { await delay(options.logoutDelay ?? 0); return json({ message: 'Sesión cerrada' }) }
     if (path === '/tasks') return json({ tasks: [data.task] })
@@ -235,6 +256,103 @@ try {
     assert.equal(state.statusWrites, 0)
     assert.equal(state.A.task.diagnosis, 'DIAGNOSTICO_A')
     assert.equal(await page.locator('textarea[name="diagnosis"]').inputValue(), 'SIN_GUARDAR')
+  })
+  /** Graba un instante con el micrófono simulado y detiene, como haría la persona. */
+  async function dictate(scope, name) {
+    await scope.getByRole('button', { name, exact: true }).click()
+    await scope.getByRole('button', { name: 'Detener dictado', exact: true }).click()
+  }
+  await run('Voz: el dictado se agrega al campo sin reemplazarlo ni guardarlo, y envía audio multipart', {}, async ({ page, state }) => {
+    await login(page, 'A'); await openDetail(page)
+    await dictate(page.getByRole('dialog'), 'Dictar diagnóstico')
+    await page.waitForFunction(() => document.querySelector('textarea[name="diagnosis"]').value.includes('Texto dictado.'))
+    assert.equal(await page.locator('textarea[name="diagnosis"]').inputValue(), 'DIAGNOSTICO_A\nTexto dictado.')
+    assert.equal(state.docsWrites, 0)
+    assert.match(state.voiceUploads[0].contentType, /^multipart\/form-data/)
+    await page.getByText('Hay cambios sin guardar.').waitFor()
+  })
+  await run('Voz: el informe dictado se reparte por secciones y respeta los demás campos', {}, async ({ page, state }) => {
+    await login(page, 'A'); await openDetail(page)
+    await dictate(page.getByRole('dialog'), 'Dictar informe completo')
+    await page.getByRole('status').filter({ hasText: 'Informe dictado agregado' }).waitFor()
+    assert.equal(await page.locator('textarea[name="diagnosis"]').inputValue(), 'DIAGNOSTICO_A\nFuente dañada.')
+    assert.equal(await page.locator('textarea[name="result"]').inputValue(), 'RESULTADO_A\nEnciende.')
+    assert.equal(await page.locator('textarea[name="activities"]').inputValue(), 'ACTIVIDADES_A')
+    assert.equal(state.docsWrites, 0)
+  })
+  await run('Voz: una tarea dictada rellena el formulario para revisarla antes de crearla', {}, async ({ page }) => {
+    await login(page, 'A')
+    await page.getByRole('button', { name: 'Nueva tarea', exact: true }).click()
+    const form = page.getByRole('dialog', { name: 'Nueva tarea técnica' })
+    await dictate(form, 'Dictar tarea completa')
+    await page.waitForFunction(() => document.querySelector('input[name="title"]').value === 'Cambiar disco')
+    assert.equal(await form.locator('select[name="equipmentId"]').inputValue(), 'a'.repeat(24))
+    assert.equal(await form.locator('textarea[name="description"]').inputValue(), 'Hace ruido.')
+    assert.equal(await form.getByRole('button', { name: 'Crear tarea' }).isEnabled(), true)
+  })
+  await run('Voz: una asignación dictada selecciona técnico y equipo, y se limpia al asignar', { admin: true }, async ({ page, state }) => {
+    await login(page, 'A')
+    await page.getByTitle('Supervisión', { exact: true }).click()
+    await dictate(page.locator('.admin-assignment-form'), 'Dictar asignación completa')
+    const title = page.locator('.admin-assignment-form input[name="title"]')
+    await page.waitForFunction(() => document.querySelector('.admin-assignment-form input[name="title"]').value === 'Cambiar pantalla')
+    assert.equal(await page.locator('select[name="technicianId"]').inputValue(), profiles.B._id)
+    assert.equal(await page.locator('.admin-assignment-form select[name="equipmentId"]').inputValue(), 'b'.repeat(24))
+    await page.getByRole('button', { name: 'Asignar tarea', exact: true }).click()
+    await page.getByRole('status').filter({ hasText: 'Tarea asignada' }).waitFor()
+    assert.deepEqual(state.assignments, [{ title: 'Cambiar pantalla', description: '', technicianId: profiles.B._id, equipmentId: 'b'.repeat(24) }])
+    assert.equal(await title.inputValue(), '')
+  })
+  await run('Voz: cerrar el detalle durante la transcripción descarta el resultado tardío', { voiceDelay: 700 }, async ({ page }) => {
+    await login(page, 'A'); await openDetail(page)
+    await dictate(page.getByRole('dialog'), 'Dictar diagnóstico')
+    await page.getByRole('button', { name: 'Transcribiendo dictado', exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Cerrar', exact: true }).click()
+    await delay(1000)
+    await openDetail(page)
+    assert.equal(await page.locator('textarea[name="diagnosis"]').inputValue(), 'DIAGNOSTICO_A')
+  })
+  await run('Voz: el error de transcripción se comunica y conserva lo escrito', { voiceError: 'No se detectó voz en la grabación.' }, async ({ page }) => {
+    await login(page, 'A'); await openDetail(page)
+    await page.locator('textarea[name="diagnosis"]').fill('SIN_GUARDAR')
+    await dictate(page.getByRole('dialog'), 'Dictar diagnóstico')
+    await page.getByRole('status').filter({ hasText: 'No se detectó voz' }).waitFor()
+    assert.equal(await page.locator('textarea[name="diagnosis"]').inputValue(), 'SIN_GUARDAR')
+    await page.getByRole('button', { name: 'Dictar diagnóstico', exact: true }).waitFor()
+  })
+  await run('Voz: sin ElevenLabs la lectura usa la voz del navegador y se puede detener', {}, async ({ page, state }) => {
+    await page.evaluate(() => {
+      window.__spoken = []
+      window.speechSynthesis.speak = (utterance) => window.__spoken.push({ text: utterance.text, lang: utterance.lang })
+    })
+    await login(page, 'A')
+    await page.getByRole('button', { name: 'Escuchar resumen', exact: true }).click()
+    await page.getByRole('button', { name: 'Detener lectura', exact: true }).click()
+    await page.getByRole('button', { name: 'Escuchar resumen', exact: true }).waitFor()
+    const [spoken] = await page.evaluate(() => window.__spoken)
+    assert.equal(spoken.lang, 'es-ES')
+    assert.equal(spoken.text, state.speechText)
+    assert.match(spoken.text, /^Hola Técnico\. Tienes 0 tareas pendientes y 1 tarea en progreso\. TAREA_PRIVADA_A, en EQUIPO_PRIVADO_A, en progreso\.$/)
+  })
+  await run('Voz: con ElevenLabs reproduce su audio; una lectura nueva reemplaza a la anterior y cerrar la detiene', { elevenLabsConfigured: true }, async ({ page, state }) => {
+    await page.evaluate(() => {
+      window.__plays = 0
+      window.__pauses = 0
+      window.speechSynthesis.speak = () => { throw new Error('No debe usar la voz del navegador') }
+      HTMLMediaElement.prototype.play = async () => { window.__plays++ }
+      HTMLMediaElement.prototype.pause = () => { window.__pauses++ }
+    })
+    await login(page, 'A')
+    await page.getByRole('button', { name: 'Escuchar resumen', exact: true }).click()
+    await page.getByRole('button', { name: 'Detener lectura', exact: true }).waitFor()
+    await openDetail(page)
+    await page.getByRole('dialog').getByRole('button', { name: 'Leer tarea', exact: true }).click()
+    await page.waitForFunction(() => window.__plays === 2)
+    assert.match(state.speechText, /^Tarea: TAREA_PRIVADA_A\. Equipo: EQUIPO_PRIVADO_A\. Estado: en progreso\. Problema reportado: PROBLEMA_A\./)
+    assert.equal(await page.evaluate(() => window.__pauses), 1)
+    await page.getByRole('button', { name: 'Escuchar resumen', exact: true }).waitFor({ state: 'attached' })
+    await page.getByRole('button', { name: 'Cerrar', exact: true }).click()
+    await page.waitForFunction(() => window.__pauses === 2)
   })
   console.log(JSON.stringify({ scope: 'Chromium, API simulada; sin Atlas', passed: results.length, results }, null, 2))
 } finally { await browser.close(); await server.close() }
