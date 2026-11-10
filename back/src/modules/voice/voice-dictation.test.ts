@@ -91,3 +91,105 @@ test('el título largo se recorta sin perder el texto dictado', () => {
   assert.ok(draft.title.length <= 120)
   assert.equal(draft.description, sentence.charAt(0).toUpperCase() + sentence.slice(1))
 })
+
+const assignmentTechnicians = [
+  { id: 'juan', name: 'Juan Pérez' },
+  { id: 'carlos', name: 'Carlos Gómez' },
+  { id: 'ana', name: 'Ana Gómez' },
+  { id: 'otra-ana', name: 'Ana López' },
+]
+
+for (const spoken of [
+  'Técnico Juan o Carlos.',
+  'Técnico Juan y Carlos.',
+  'Técnico Juan Pérez y Carlos.',
+  'Técnico Juan Pérez. Técnico Carlos Gómez.',
+  'Técnico Ana.',
+  'Técnico Pérez.',
+  'Técnico Jua.',
+  'Técnico Juan desconocido.',
+  'Técnico Pedro.',
+  'No asignar a Juan.',
+  'No le asignes a Juan Pérez.',
+  'Técnico: no Juan Pérez.',
+  'Nunca asignar a Carlos Gómez.',
+  'No Juan Pérez.',
+  'Juan Pérez o Pedro.',
+  'Juan Pérez y Carlos.',
+  'Juan y Carlos.',
+]) {
+  test(`A03: selección manual sin inferir propietario para «${spoken}»`, () => {
+    const draft = parseTaskDictation(`${spoken} Equipo PC-001. Título: revisar.`, equipment, assignmentTechnicians)
+    assert.equal(draft.technicianId, null)
+    assert.equal(draft.equipmentId, 'laptop', 'El reconocimiento del equipo se conserva sin resolver a la persona')
+  })
+}
+
+test('A03: un nombre completo distingue técnicos que comparten nombre de pila', () => {
+  assert.equal(parseTaskDictation('Asignar a Ana Gómez. Equipo PC-001.', equipment, assignmentTechnicians).technicianId, 'ana')
+})
+
+test('A03: una negación del síntoma no invalida una asignación inequívoca', () => {
+  const draft = parseTaskDictation('Asignar a Ana Gómez. Equipo PC-001. Título: no enciende.', equipment, assignmentTechnicians)
+  assert.equal(draft.technicianId, 'ana')
+  assert.equal(draft.equipmentId, 'laptop')
+})
+
+for (const spoken of [
+  'Equipo PC-001. Título: no enciende',
+  'Equipo PC-001. Descripción: no enciende ni carga la batería.',
+  'Equipo PC-001. Título: sin conexión. Descripción: nunca detecta la red.',
+  'Equipo PC-001. Descripción: Carlos Gómez revisó anteriormente el computador',
+  'Equipo PC-001. Título: seguimiento de Carlos Gómez.',
+  'Equipo PC-001. Descripción: Carlos Gómez y Juan Pérez revisaron el equipo anteriormente.',
+  'Equipo PC-001. Descripción: Carlos Gómez no pudo reparar el computador.',
+  'Carlos Gómez revisó anteriormente el computador. Equipo PC-001.',
+  'Equipo PC-001.',
+  'Actualizar el servidor principal.',
+]) {
+  test(`A03: el contexto descriptivo permite inferir al propietario para «${spoken}»`, () => {
+    const draft = parseTaskDictation(spoken, equipment, [...assignmentTechnicians, technicians[1]])
+    const expectedOwner = spoken.includes('servidor') ? 'luis' : 'ana'
+    const expectedEquipment = expectedOwner === 'luis' ? 'server' : 'laptop'
+    assert.equal(draft.technicianId, expectedOwner)
+    assert.equal(draft.equipmentId, expectedEquipment)
+  })
+}
+
+for (const spoken of [
+  'Equipo PC-001. Descripción: Carlos Gómez revisó anteriormente. Asignar a Ana Gómez.',
+  'Asignar a Ana Gómez. Equipo PC-001. Título: no enciende. Descripción: Carlos Gómez no pudo repararlo.',
+  'Técnico Ana Gómez. Equipo PC-001. Descripción: Juan Pérez y Carlos Gómez atendieron el caso antes.',
+]) {
+  test(`A03: una asignación explícita prevalece sobre los antecedentes para «${spoken}»`, () => {
+    const draft = parseTaskDictation(spoken, equipment, assignmentTechnicians)
+    assert.equal(draft.technicianId, 'ana')
+    assert.equal(draft.equipmentId, 'laptop')
+  })
+}
+
+for (const spoken of [
+  'Equipo PC-001. No asignar a Carlos Gómez. Título: no enciende.',
+  'Equipo PC-001. Título: no enciende. No le asignes a Juan Pérez.',
+  'Equipo PC-001. Descripción: no asignar a Juan Pérez.',
+  'No asignar a Juan. Asignar a Ana Gómez. Equipo PC-001.',
+  'Equipo PC-001. Técnico Juan o Carlos. Descripción: Ana Gómez lo revisó antes.',
+]) {
+  test(`A03: una instrucción contradictoria o incierta impide inferir al propietario para «${spoken}»`, () => {
+    const draft = parseTaskDictation(spoken, equipment, assignmentTechnicians)
+    assert.equal(draft.technicianId, null)
+    assert.equal(draft.equipmentId, 'laptop')
+  })
+}
+
+test('A03: un antecedente sin equipo no propone a la persona mencionada', () => {
+  const draft = parseTaskDictation('Descripción: Carlos Gómez revisó anteriormente el computador.', equipment, assignmentTechnicians)
+  assert.equal(draft.technicianId, null)
+  assert.equal(draft.equipmentId, null)
+})
+
+test('A03: un antecedente no oculta la incompatibilidad de una asignación explícita con el equipo', () => {
+  const draft = parseTaskDictation('Asignar a Carlos Gómez. Equipo PC-001. Descripción: Ana Gómez revisó anteriormente.', equipment, assignmentTechnicians)
+  assert.equal(draft.technicianId, 'carlos')
+  assert.equal(draft.equipmentId, null)
+})

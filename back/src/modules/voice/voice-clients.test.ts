@@ -34,7 +34,7 @@ test('AssemblyAI: sube el audio, pide español y espera hasta que la transcripci
   assert.deepEqual(JSON.parse(String(submit.arguments[1].body)), {
     audio_url: 'https://cdn.fixture/audio',
     language_code: 'es',
-    speech_models: ['universal-3-pro', 'universal-2'],
+    speech_models: ['universal-3-5-pro', 'universal-2'],
   })
   assert.equal(fetchFn.mock.calls.length, 4)
 })

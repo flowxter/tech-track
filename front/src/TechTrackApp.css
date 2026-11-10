@@ -178,6 +178,12 @@ h1, h2, h3, p { margin-top: 0; }
 .dialog-form input:focus, .dialog-form textarea:focus, .dialog-form select:focus { border-color: #9dbfac; box-shadow: 0 0 0 3px rgba(75,135,105,.08); }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
 .form-warning { padding: 9px 10px; display: flex; align-items: center; gap: 8px; border: 1px solid #f0e2c8; border-radius: 5px; color: #9b743d; background: #fcf7eb; font-size: 9px; line-height: 1.4; }
+.dictation-conflicts { min-width: 0; display: grid; font-size: 11px; overflow-wrap: anywhere; }
+.dictation-conflicts p { margin: 0; }
+.dictation-conflicts section, .dictation-conflicts section > div { min-width: 0; display: grid; gap: 8px; }
+.dictation-conflicts section { padding-top: 10px; border-top: 1px solid #f0e2c8; }
+.dictation-conflicts .secondary-button { justify-self: start; max-width: 100%; height: auto; min-height: 32px; white-space: normal; text-align: left; }
+.dictation-proposal { white-space: pre-wrap; }
 .dialog-actions { margin-top: 5px; padding-top: 13px; display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid #edf0ed; }
 .detail-content { padding: 20px; }
 .detail-title { display: flex; align-items: center; gap: 12px; }

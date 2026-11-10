@@ -1,13 +1,11 @@
 import assert from 'node:assert/strict'
-import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
+import { chromium } from 'playwright'
 import { createServer } from 'vite'
 import react from '@vitejs/plugin-react'
+import { verifyRecorder } from './voiceRecorder.mjs'
+import { verifyNativeRecorder } from './nativeRecorder.mjs'
 
-// Playwright se puede resolver desde un runtime externo, sin instalar dependencias.
-const require = createRequire(process.env.TECHTRACK_TEST_NODE_MODULES
-  ? `${process.env.TECHTRACK_TEST_NODE_MODULES}/package.json` : import.meta.url)
-const { chromium } = require('playwright')
 const server = await createServer({ root: fileURLToPath(new URL('..', import.meta.url)), configFile: false,
   envDir: false, logLevel: 'error', plugins: [react()], server: { host: '127.0.0.1', port: 0 },
   define: { 'import.meta.env.VITE_API_URL': JSON.stringify('http://techtrack.mock.invalid/api') } })
@@ -15,6 +13,10 @@ await server.listen()
 const address = server.httpServer.address()
 // El micrófono simulado permite ejercitar MediaRecorder sin hardware ni permisos manuales.
 const browser = await chromium.launch({ headless: true, args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'], ...(process.env.TECHTRACK_TEST_BROWSER_CHANNEL ? { channel: process.env.TECHTRACK_TEST_BROWSER_CHANNEL } : {}) })
+  .catch(async (cause) => {
+    await server.close()
+    throw new Error('No se pudo iniciar Chromium. Ejecuta npm run test:install --prefix front o configura TECHTRACK_TEST_BROWSER_CHANNEL.', { cause })
+  })
 const results = []
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 const stamp = '2000-01-01T00:00:00.000Z'
@@ -32,7 +34,7 @@ async function setup(options = {}) {
   const context = await browser.newContext({ permissions: ['microphone'] })
   const page = await context.newPage()
   page.setDefaultTimeout(10000)
-  const state = { A: fixtures('A'), B: fixtures('B'), statusWrites: 0, docsWrites: 0, detailsStarted: 0, historyStarted: 0, imageStarted: 0, imageURLs: 0, revokedURLs: 0, voiceUploads: [], assignments: [] }
+  const state = { A: fixtures('A'), B: fixtures('B'), statusWrites: 0, docsWrites: 0, detailsStarted: 0, historyStarted: 0, imageStarted: 0, imageURLs: 0, revokedURLs: 0, voiceUploads: [], assignments: [], taskCreates: [] }
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   await page.addInitScript(() => {
@@ -74,6 +76,8 @@ async function setup(options = {}) {
       state.voiceUploads.push({ path, contentType: request.headers()['content-type'] })
       await delay(options.voiceDelay ?? 0)
       if (options.voiceError) return json({ message: options.voiceError }, 422)
+      const drafts = options.voiceDrafts?.[path]
+      if (drafts?.length) return json({ text: 'Dictado simulado', draft: drafts.shift() })
       if (path === '/voice/transcribe') return json({ text: 'Texto dictado.' })
       if (path === '/voice/documentation-draft') return json({ text: 'x', sections: { diagnosis: 'Fuente dañada.', result: 'Enciende.' } })
       if (path === '/voice/task-draft') return json({ text: 'x', draft: { title: 'Cambiar disco', description: 'Hace ruido.', equipmentId: data.equipment._id, technicianId: null } })
@@ -86,6 +90,11 @@ async function setup(options = {}) {
       return json({ message: 'Tarea asignada a Técnico B.', task: { ...state.B.task, owner: profiles.B } }, 201)
     }
     if (path === '/auth/logout') { await delay(options.logoutDelay ?? 0); return json({ message: 'Sesión cerrada' }) }
+    if (path === '/tasks' && request.method() === 'POST') {
+      const input = request.postDataJSON()
+      state.taskCreates.push(input)
+      return json({ task: { ...data.task, ...input, _id: state.taskCreates.length.toString(16).padStart(24, '0') } }, 201)
+    }
     if (path === '/tasks') return json({ tasks: [data.task] })
     if (path === '/equipment') return json({ equipment: [data.equipment] })
     if (path.endsWith('/history')) {
@@ -149,6 +158,14 @@ async function run(name, options, fn) {
   finally { await app.context.close() }
 }
 try {
+  for (const scenario of ['constructor', 'start', 'error', 'concurrent', 'another-field', 'late-permission', 'cancel-permission', 'unmount', 'stop', 'stop-failure', 'timeout', 'denied', 'final-chunks', 'missing-stop', 'data-without-stop', 'empty']) {
+    await run(`A02: micrófono y temporizadores liberados (${scenario})`, {}, async ({ page }) => {
+      await verifyRecorder(page, scenario)
+    })
+  }
+  await run('A02: MediaRecorder nativo entrega WebM completo y decodificable antes de liberar la sesión', {}, async ({ page }) => {
+    await verifyNativeRecorder(page)
+  })
   await run('D01: login anterior pendiente no reemplaza la sesión recibida de otra pestaña', { loginDelay: 700 }, async ({ page }) => {
     await page.getByLabel('Correo electrónico').fill('a@example.invalid')
     await page.getByLabel('Contraseña', { exact: true }).fill('fixture-password')
@@ -260,8 +277,155 @@ try {
   /** Graba un instante con el micrófono simulado y detiene, como haría la persona. */
   async function dictate(scope, name) {
     await scope.getByRole('button', { name, exact: true }).click()
+    await scope.getByRole('button', { name: 'Detener dictado', exact: true }).waitFor()
+    await delay(200)
     await scope.getByRole('button', { name: 'Detener dictado', exact: true }).click()
   }
+  await run('A04: segundo dictado de tarea actualiza texto sin editar y limpia equipo no reconocido', {
+    voiceDrafts: { '/voice/task-draft': [
+      { title: 'Primer dictado', description: 'Descripción inicial', equipmentId: 'a'.repeat(24), technicianId: null },
+      { title: 'Segundo dictado', description: 'Descripción actualizada', equipmentId: null, technicianId: null },
+    ] },
+  }, async ({ page, state }) => {
+    await login(page, 'A')
+    await page.getByRole('button', { name: 'Nueva tarea', exact: true }).click()
+    const form = page.getByRole('dialog', { name: 'Nueva tarea técnica' })
+    await dictate(form, 'Dictar tarea completa')
+    await page.waitForFunction(() => document.querySelector('input[name="title"]').value === 'Primer dictado')
+    await dictate(form, 'Dictar tarea completa')
+    await page.waitForFunction(() => document.querySelector('input[name="title"]').value === 'Segundo dictado')
+    assert.equal(await form.locator('textarea[name="description"]').inputValue(), 'Descripción actualizada')
+    assert.equal(await form.locator('select[name="equipmentId"]').inputValue(), '')
+    assert.equal(await form.getByRole('alert').count(), 0)
+    assert.equal(await form.locator('select[name="equipmentId"]').evaluate((select) => select.checkValidity()), false)
+    assert.equal(state.taskCreates.length, 0)
+    await form.locator('select[name="equipmentId"]').selectOption('a'.repeat(24))
+    await form.getByRole('button', { name: 'Crear tarea', exact: true }).click()
+    await page.getByRole('status').filter({ hasText: 'Tarea creada' }).waitFor()
+    assert.deepEqual(state.taskCreates, [{ title: 'Segundo dictado', description: 'Descripción actualizada', equipmentId: 'a'.repeat(24) }])
+  })
+  await run('A04: segundo dictado de asignación actualiza texto sin editar y exige selección manual', {
+    admin: true,
+    voiceDrafts: { '/voice/assignment-draft': [
+      { title: 'Primera asignación', description: 'Descripción inicial', equipmentId: 'b'.repeat(24), technicianId: profiles.B._id },
+      { title: 'Segunda asignación', description: 'Descripción actualizada', equipmentId: null, technicianId: null },
+    ] },
+  }, async ({ page, state }) => {
+    await login(page, 'A')
+    await page.getByTitle('Supervisión', { exact: true }).click()
+    const form = page.locator('.admin-assignment-form')
+    await dictate(form, 'Dictar asignación completa')
+    await page.waitForFunction(() => document.querySelector('.admin-assignment-form input[name="title"]').value === 'Primera asignación')
+    await dictate(form, 'Dictar asignación completa')
+    await page.waitForFunction(() => document.querySelector('.admin-assignment-form input[name="title"]').value === 'Segunda asignación')
+    assert.equal(await form.locator('textarea[name="description"]').inputValue(), 'Descripción actualizada')
+    assert.equal(await form.locator('select[name="technicianId"]').inputValue(), '')
+    assert.equal(await form.locator('select[name="equipmentId"]').inputValue(), '')
+    assert.equal(await form.getByRole('alert').count(), 0)
+    assert.equal(state.assignments.length, 0)
+    await form.locator('select[name="technicianId"]').selectOption(profiles.B._id)
+    await form.locator('select[name="equipmentId"]').selectOption('b'.repeat(24))
+    await form.getByRole('button', { name: 'Asignar tarea', exact: true }).click()
+    await page.getByRole('status').filter({ hasText: 'Tarea asignada' }).waitFor()
+    assert.deepEqual(state.assignments, [{ title: 'Segunda asignación', description: 'Descripción actualizada', technicianId: profiles.B._id, equipmentId: 'b'.repeat(24) }])
+  })
+  await run('A04: dos dictados de tarea limpian el equipo anterior y conservan texto editable', {
+    voiceDrafts: { '/voice/task-draft': [
+      { title: 'Primer dictado', description: 'Descripción dictada', equipmentId: 'a'.repeat(24), technicianId: null },
+      { title: 'Segundo dictado', description: 'Otro texto', equipmentId: null, technicianId: null },
+    ] },
+  }, async ({ page, state }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await login(page, 'A')
+    await page.getByRole('button', { name: 'Nueva tarea', exact: true }).click()
+    const form = page.getByRole('dialog', { name: 'Nueva tarea técnica' })
+    await dictate(form, 'Dictar tarea completa')
+    await page.waitForFunction(() => document.querySelector('input[name="title"]').value === 'Primer dictado')
+    await form.locator('input[name="title"]').fill('Título escrito por la persona')
+    await form.locator('textarea[name="description"]').fill('Descripción escrita por la persona')
+    await dictate(form, 'Dictar tarea completa')
+    await page.getByRole('status').filter({ hasText: 'Selecciona manualmente el equipo' }).waitFor()
+    assert.equal(await form.locator('select[name="equipmentId"]').inputValue(), '')
+    assert.equal(await form.locator('input[name="title"]').inputValue(), 'Título escrito por la persona')
+    assert.equal(await form.locator('textarea[name="description"]').inputValue(), 'Descripción escrita por la persona')
+    await form.getByRole('alert').filter({ hasText: 'conflictos con tus cambios manuales' }).waitFor()
+    assert.equal(await form.getByText('Segundo dictado', { exact: true }).count(), 1)
+    assert.equal(await form.getByText('Otro texto', { exact: true }).count(), 1)
+    assert.equal(await form.locator('.dictation-conflicts').evaluate((panel) => panel.scrollWidth <= panel.clientWidth + 1), true)
+    assert.equal(await form.getByRole('button', { name: 'Crear tarea', exact: true }).isDisabled(), true)
+    assert.equal(await form.locator('select[name="equipmentId"]').evaluate((select) => select.checkValidity()), false)
+    await form.locator('select[name="equipmentId"]').selectOption('a'.repeat(24))
+    assert.equal(await form.locator('select[name="equipmentId"]').evaluate((select) => select.checkValidity()), true)
+    assert.equal(state.voiceUploads.length, 2)
+    assert.equal(state.assignments.length, 0)
+    assert.equal(state.taskCreates.length, 0)
+    await form.getByRole('button', { name: 'Conservar mi título', exact: true }).click()
+    await form.getByRole('button', { name: 'Usar este dictado como descripción', exact: true }).click()
+    assert.equal(await form.getByRole('alert').count(), 0)
+    await form.getByRole('button', { name: 'Crear tarea', exact: true }).click()
+    await page.getByRole('status').filter({ hasText: 'Tarea creada' }).waitFor()
+    assert.deepEqual(state.taskCreates, [{ title: 'Título escrito por la persona', description: 'Otro texto', equipmentId: 'a'.repeat(24) }])
+  })
+  await run('A04: dos dictados de asignación eliminan asociaciones inciertas sin borrar lo escrito', {
+    admin: true,
+    voiceDrafts: { '/voice/assignment-draft': [
+      { title: 'Primera asignación', description: 'Dictado inicial', equipmentId: 'b'.repeat(24), technicianId: profiles.B._id },
+      { title: 'Otra asignación', description: 'Otro texto', equipmentId: 'b'.repeat(24), technicianId: null },
+    ] },
+  }, async ({ page, state }) => {
+    await login(page, 'A')
+    await page.getByTitle('Supervisión', { exact: true }).click()
+    const form = page.locator('.admin-assignment-form')
+    await dictate(form, 'Dictar asignación completa')
+    await page.waitForFunction(() => document.querySelector('.admin-assignment-form input[name="title"]').value === 'Primera asignación')
+    await form.locator('input[name="title"]').fill('Título manual')
+    await form.locator('textarea[name="description"]').fill('Descripción manual')
+    await dictate(form, 'Dictar asignación completa')
+    await page.getByRole('status').filter({ hasText: 'Selecciona manualmente el técnico' }).waitFor()
+    assert.equal(await form.locator('select[name="technicianId"]').inputValue(), '')
+    assert.equal(await form.locator('select[name="equipmentId"]').inputValue(), '')
+    assert.equal(await form.locator('input[name="title"]').inputValue(), 'Título manual')
+    assert.equal(await form.locator('textarea[name="description"]').inputValue(), 'Descripción manual')
+    await form.getByRole('alert').filter({ hasText: 'conflictos con tus cambios manuales' }).waitFor()
+    assert.equal(await form.getByText('Otra asignación', { exact: true }).count(), 1)
+    assert.equal(await form.getByText('Otro texto', { exact: true }).count(), 1)
+    assert.equal(state.assignments.length, 0)
+    await form.locator('select[name="technicianId"]').selectOption(profiles.B._id)
+    await form.locator('select[name="equipmentId"]').selectOption('b'.repeat(24))
+    assert.equal(await form.getByRole('button', { name: 'Asignar tarea', exact: true }).isDisabled(), true)
+    await form.getByRole('button', { name: 'Conservar mi título', exact: true }).click()
+    await form.getByRole('button', { name: 'Conservar mi descripción', exact: true }).click()
+    await form.getByRole('button', { name: 'Asignar tarea', exact: true }).click()
+    await page.getByRole('status').filter({ hasText: 'Tarea asignada' }).waitFor()
+    assert.deepEqual(state.assignments, [{ title: 'Título manual', description: 'Descripción manual', technicianId: profiles.B._id, equipmentId: 'b'.repeat(24) }])
+  })
+  await run('A04: la procedencia se controla por campo y los conflictos sucesivos siguen disponibles', {
+    voiceDrafts: { '/voice/task-draft': [
+      { title: 'Título inicial', description: 'Descripción inicial', equipmentId: 'a'.repeat(24), technicianId: null },
+      { title: 'Propuesta segunda', description: 'Descripción segunda', equipmentId: 'a'.repeat(24), technicianId: null },
+      { title: 'Propuesta tercera', description: 'Descripción tercera', equipmentId: null, technicianId: null },
+    ] },
+  }, async ({ page }) => {
+    await login(page, 'A')
+    await page.getByRole('button', { name: 'Nueva tarea', exact: true }).click()
+    const form = page.getByRole('dialog', { name: 'Nueva tarea técnica' })
+    await dictate(form, 'Dictar tarea completa')
+    await page.waitForFunction(() => document.querySelector('input[name="title"]').value === 'Título inicial')
+    await form.locator('input[name="title"]').fill('Mi título')
+    await dictate(form, 'Dictar tarea completa')
+    await form.getByText('Propuesta segunda', { exact: true }).waitFor()
+    assert.equal(await form.locator('textarea[name="description"]').inputValue(), 'Descripción segunda')
+    assert.equal(await form.locator('input[name="title"]').inputValue(), 'Mi título')
+    await dictate(form, 'Dictar tarea completa')
+    await form.getByText('Propuesta tercera', { exact: true }).waitFor()
+    assert.equal(await form.getByText('Propuesta segunda', { exact: true }).count(), 1)
+    assert.equal(await form.locator('textarea[name="description"]').inputValue(), 'Descripción tercera')
+    assert.equal(await form.locator('input[name="title"]').inputValue(), 'Mi título')
+    assert.equal(await form.locator('select[name="equipmentId"]').inputValue(), '')
+    await form.getByRole('button', { name: 'Usar este dictado como título', exact: true }).first().click()
+    assert.equal(await form.locator('input[name="title"]').inputValue(), 'Propuesta segunda')
+    assert.equal(await form.getByRole('alert').count(), 0)
+  })
   await run('Voz: el dictado se agrega al campo sin reemplazarlo ni guardarlo, y envía audio multipart', {}, async ({ page, state }) => {
     await login(page, 'A'); await openDetail(page)
     await dictate(page.getByRole('dialog'), 'Dictar diagnóstico')
