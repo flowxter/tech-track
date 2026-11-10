@@ -1,5 +1,19 @@
 # React + TypeScript + Vite
 
+## Regresión de TechTrack
+
+Desde la raíz del repositorio, con Node.js compatible con Vite (22.18 o posterior):
+
+```powershell
+npm ci --prefix front
+npm run test:install --prefix front
+npm run test:regression --prefix front
+```
+
+Playwright está fijado en `package-lock.json`. `test:install` descarga el Chromium correspondiente una vez; en Linux puede ser necesario instalar también sus dependencias del sistema con `playwright install --with-deps chromium` desde `front/`.
+La suite arranca Vite en localhost, desactiva la carga de `.env` y bloquea solicitudes externas. Usa una API y un micrófono simulados, sin Atlas ni proveedores de voz reales.
+Como alternativa en Windows puede usarse Edge ya instalado: `$env:TECHTRACK_TEST_BROWSER_CHANNEL='msedge'` antes de ejecutar la regresión. No requiere un runtime externo de Playwright.
+
 This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 
 Currently, two official plugins are available:

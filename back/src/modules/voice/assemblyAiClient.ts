@@ -2,7 +2,7 @@ import { HttpError } from '../../utils/HttpError'
 
 const API_URL = 'https://api.assemblyai.com/v2'
 // Mismo orden de modelos que el demo: AssemblyAI usa el primero que soporte el idioma.
-const SPEECH_MODELS = ['universal-3-pro', 'universal-2']
+const SPEECH_MODELS = ['universal-3-5-pro', 'universal-2']
 
 type AssemblyAiOptions = {
   apiKey: string
