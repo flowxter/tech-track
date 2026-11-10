@@ -4,7 +4,7 @@ const MAX_TITLE_LENGTH = 120
 const MAX_DESCRIPTION_LENGTH = 2000
 const TASK_LEAD_IN = /^\s*(?:(?:crear|crea|registrar|registra|agregar|agrega)\s+)?(?:una\s+)?(?:nueva\s+)?tarea(?![\p{L}\p{N}])[\s:,.;-]*/iu
 const TASK_MARKERS = {
-  technician: ['tecnico', 'tecnica', 'asignar tarea a', 'asignar la tarea a', 'asignar a', 'asignada a', 'asignado a'],
+  technician: ['tecnico', 'tecnica', 'asigna a', 'asignar tarea a', 'asignar la tarea a', 'asignar a', 'asignada a', 'asignado a'],
   equipment: ['equipo', 'activo'],
   title: ['titulo'],
   description: ['descripcion', 'problema', 'detalle'],
@@ -13,6 +13,32 @@ const TASK_MARKERS = {
 export type EquipmentCandidate = { id: string; assetTag: string; name: string; ownerId: string }
 export type TechnicianCandidate = { id: string; name: string }
 export type TaskDraft = { title: string; description: string; equipmentId: string | null; technicianId: string | null }
+
+/** Solo los encabezados de asignación admiten campos consecutivos sin puntuación. */
+function splitTaskSections(text: string) {
+  type Field = keyof typeof TASK_MARKERS
+  const aliases = Object.entries(TASK_MARKERS).flatMap(([field, words]) => words.map((word) => ({ field: field as Field, word })))
+  const alternatives = aliases.map(({ word }) => word).sort((a, b) => b.length - a.length)
+    .map((word) => word.replace(/e/g, '[eé]').replace(/i/g, '[ií]').replace(/o/g, '[oó]').replace(/ /g, '\\s+')).join('|')
+  const marker = new RegExp(`(?<![\\p{L}\\p{N}])(?:(?:el|la)\\s+)?(${alternatives})(?=\\s|[:.,;-]|$)`, 'giu')
+  let current: Field | undefined
+  let hasTechnicianField = false
+  const separated = text.replace(marker, (match: string, alias: string, offset: number) => {
+    const field = aliases.find(({ word }) => word === normalizeSpoken(alias).replace(/\s+/g, ' '))!.field
+    const clauseStart = /^[\s]*$|[.?!;:,\n]\s*$/u.test(text.slice(0, offset))
+    // No convertir menciones del equipo/técnico dentro de título o descripción en asignaciones.
+    const inline = ((current === 'technician' || current === 'equipment') && field !== 'technician')
+      || (current === 'title' && normalizeSpoken(alias) === 'descripcion')
+    if (!clauseStart && !inline) return match
+    current = field
+    if (field === 'technician') hasTechnicianField = true
+    return clauseStart ? match : `. ${match}`
+  })
+  const result = splitSpokenSections(separated, TASK_MARKERS)
+  // Un encabezado vacío es una asignación incompleta, no una petición de inferir al propietario.
+  if (hasTechnicianField && result.sections.technician === undefined) result.sections.technician = ''
+  return result
+}
 
 /** Elige el candidato con la mención más específica; ante un empate no adivina. */
 function pickBestMatch<T>(candidates: T[], scoreOf: (candidate: T) => number): T | null {
@@ -38,13 +64,14 @@ function nameWords(text: string) {
 function matchTechnician(section: string | undefined, context: string, transcript: string, technicians: TechnicianCandidate[]) {
   const text = nameWords(section ?? context)
   const normalizedTranscript = normalizeSpoken(transcript)
-  const hasAssignmentIntent = section !== undefined || /\b(?:asign\p{L}*|tecnic[oa])\b/u.test(normalizeSpoken(context))
+  const assignmentInContext = /\b(?:asign\p{L}*|tecnic[oa])\b/u.test(normalizeSpoken(context))
+  const hasAssignmentIntent = section !== undefined || assignmentInContext
   // Una instrucción negativa explícita sí bloquea la inferencia, esté donde esté.
   // Un simple «no» del síntoma, o un nombre en título/descripción, no la bloquea.
   const negatedAssignment = /\b(?:no|nunca|jamas|tampoco|sin)\s+(?:\p{L}+\s+){0,4}asign\p{L}*\b/u.test(normalizedTranscript)
   const uncertainSection = section !== undefined && /\b(?:no|ni|nunca|jamas|tampoco|sin|o|u|entre|quizas|quiza|tal vez)\b/u.test(text)
   const pending = { candidate: null, allowOwnerInference: false }
-  if (negatedAssignment || uncertainSection) return pending
+  if (negatedAssignment || uncertainSection || (section !== undefined && assignmentInContext)) return pending
 
   const containsName = (name: string) => ` ${text} `.includes(` ${nameWords(name)} `)
   const fullMatches = technicians.filter(({ name }) => containsName(name))
@@ -93,7 +120,7 @@ function splitTitleFromText(text: string) {
  * Solo busca entre los candidatos recibidos, por lo que nunca propone datos ajenos a la cuenta.
  */
 export function parseTaskDictation(transcript: string, equipment: EquipmentCandidate[], technicians: TechnicianCandidate[] = []): TaskDraft {
-  const { sections, unlabeled } = splitSpokenSections(transcript.replace(TASK_LEAD_IN, ''), TASK_MARKERS)
+  const { sections, unlabeled } = splitTaskSections(transcript.replace(TASK_LEAD_IN, ''))
   // Excluir título y descripción al buscar intenciones ambiguas o incompletas.
   const assignmentContext = [unlabeled, sections.equipment].filter(Boolean).join(' ')
   const { candidate: technician, allowOwnerInference } = matchTechnician(sections.technician, assignmentContext, transcript, technicians)
