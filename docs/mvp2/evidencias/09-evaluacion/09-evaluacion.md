@@ -1,87 +1,239 @@
 # 09. Evaluación — TechTrack MVP2
 
-**Propósito:** evaluar los resultados de la ampliación del MVP1, el aporte de las herramientas de IA y las decisiones humanas, sin confundir implementación, pruebas, aceptación y despliegue.
+**Propósito:** evaluar los resultados de la ampliación del MVP1, el aporte de las herramientas de inteligencia artificial y las decisiones humanas, diferenciando implementación, pruebas, aceptación y despliegue.
 
 ## 1. Cumplimiento del objetivo
 
-El objetivo del MVP2 fue incorporar reconocimiento y síntesis de voz para facilitar el registro y la consulta de intervenciones de soporte técnico. **El objetivo funcional se alcanzó en los recorridos probados:** TechTrack permite dictar información, preparar y revisar borradores, y escuchar tareas y resúmenes. La mejora de productividad es una hipótesis razonable, pero **no se midió el ahorro de tiempo ni se evaluó formalmente con técnicos externos**.
+El objetivo del MVP2 fue incorporar reconocimiento y síntesis de voz para facilitar el registro, la documentación y la consulta de intervenciones de soporte técnico.
 
-El MVP2 incorpora cinco historias de usuario independientes y complementarias a las funcionalidades existentes:
+**El objetivo funcional se alcanzó en los escenarios probados:** TechTrack permite dictar información, preparar borradores de tareas e informes, realizar asignaciones administrativas mediante voz y escuchar tareas y resúmenes.
+
+Estas funcionalidades amplían las capacidades existentes del MVP1 sin reemplazar sus módulos principales.
+
+Sin embargo, aunque la incorporación de voz busca facilitar el trabajo de los técnicos, **no se midió formalmente el ahorro de tiempo ni se realizaron evaluaciones de productividad con usuarios externos**.
+
+### Historias de usuario implementadas
+
+El MVP2 incorpora cinco historias de usuario independientes y complementarias a las doce historias originales:
 
 | HU | Resultado implementado | Verificación disponible |
 |---|---|---|
-| **HU13** | Dictado en campos individuales. | Pruebas automatizadas; uso práctico reportado, pendiente de registro. |
-| **HU14** | Creación de borradores de tareas por voz. | Interpretación simulada y flujo funcional con revisión previa. |
-| **HU15** | Dictado y distribución del informe entre sus secciones. | Pruebas del parser; recorrido práctico reportado, pendiente de registro. |
-| **HU16** | Borrador de asignación administrativa por voz. | Pruebas de ambigüedad, permisos y flujo con confirmación humana. |
-| **HU17** | Lectura de tareas y resúmenes con ElevenLabs y respaldo del navegador. | Pruebas automatizadas; reproducción práctica reportada, pendiente de registro. |
+| **HU13** | Dictado en campos individuales. | Pruebas automatizadas y uso práctico reportado por el equipo. |
+| **HU14** | Creación de borradores de tareas mediante voz. | Pruebas de interpretación y flujo funcional con revisión previa. |
+| **HU15** | Dictado y distribución de informes técnicos entre sus secciones. | Pruebas automatizadas del parser y recorrido práctico reportado. |
+| **HU16** | Preparación de asignaciones administrativas mediante voz. | Pruebas de permisos, ambigüedades, lenguaje natural y validación manual con AssemblyAI. |
+| **HU17** | Lectura de tareas y resúmenes mediante ElevenLabs, con respaldo del navegador. | Pruebas automatizadas y reproducción práctica reportada. |
 
-**Estado de las HU:** funcionalidades implementadas y verificadas en los escenarios descritos; la aceptación formal de cada historia y sus datos oficiales de Jira aún deben cotejarse con el backlog.
+La aplicación conserva una regla fundamental: **la información reconocida mediante voz debe revisarse y confirmarse antes de guardarse**.
+
+En los casos en los que no es posible identificar de forma inequívoca un técnico o equipo, el sistema solicita intervención manual en lugar de realizar una asignación insegura.
+
+**Estado de las historias:** las funcionalidades se encuentran implementadas y cuentan con verificaciones en los escenarios descritos. La aceptación formal de cada historia debe contrastarse con los criterios y estados registrados en Jira.
 
 ## 2. Resultados de calidad y pruebas
 
-| Indicador | Auditoría inicial | Corrección autorizada |
-|---|---:|---:|
-| Pruebas backend aprobadas | **33/33** | **52/52** |
-| Pruebas frontend aprobadas | No ejecutadas (faltaba Playwright) | **32/32** |
-| Hallazgos técnicos identificados | **14 (A01–A14)** | **5 abordados (A01–A04 y A12)** |
-| Casos nuevos reportados | — | **19 backend + 14 frontend** |
-| Builds de frontend y backend | Aprobados | Aprobados |
+### 2.1. Auditoría técnica inicial
 
-En la primera corrección se reportaron **84 pruebas automatizadas aprobadas y ninguna fallida**, además de validación de TypeScript estricto y comprobaciones de código. Ese resultado histórico se conserva y no se sustituye por las ejecuciones posteriores.
+Después de integrar la primera versión de las funcionalidades de voz, el equipo utilizó Codex para realizar una auditoría técnica del código.
 
-| Ejecución posterior independiente | Backend | Frontend | Resultado final |
-|---|---:|---:|---|
-| Ajustes de A02/A04 | **52/52** | **40/40** | 92 aprobadas; 0 fallidas y 0 omitidas |
-| Ajuste posterior de A03 | **72/72** | **40/40** | 112 aprobadas; 0 fallidas y 0 omitidas |
+En esta etapa se solicitó identificar posibles defectos, problemas de compatibilidad, riesgos de seguridad y pruebas faltantes, **sin autorizar modificaciones al repositorio**.
 
-Los resultados posteriores constan en salidas reales del terminal del historial de trabajo y no se han ejecutado nuevamente para esta actualización. Cada fila corresponde a una versión sucesiva de las suites: **no se suman los totales de distintas ejecuciones**. Las pruebas mantuvieron proveedores y persistencia simulados. A02/A04 añadió la grabación nativa de Chromium con dispositivo simulado; A03 añadió 20 casos backend sobre contexto descriptivo, negaciones, asignaciones e inferencia del propietario. Esto no acredita micrófono físico ni disponibilidad de AssemblyAI, ElevenLabs o MongoDB Atlas en producción.
+Como resultado, Codex identificó **14 hallazgos técnicos**, clasificados desde A01 hasta A14.
 
-**Prueba integral reportada:** el equipo indicó que comprobó el recorrido completo, incluidas HU13–HU17, y que resolvió un error `422` al cambiar el micrófono. Falta adjuntar `docs/mvp2/evidencias/06-pruebas/pruebas-reales/flujo-completo-mvp2.md`, con los resultados por caso y las capturas o grabaciones auténticas. Hasta entonces, el recorrido y la causa del incidente se consideran reportados por el equipo, no corroborados mediante evidencia primaria adjunta.
+El equipo evaluó los resultados y decidió priorizar inicialmente cinco hallazgos:
 
-## 3. Aporte de la IA al desarrollo
+- **A01:** compatibilidad del modelo utilizado por AssemblyAI.
+- **A02:** control del micrófono y ciclo de vida de las grabaciones.
+- **A03:** interpretación de asignaciones ambiguas.
+- **A04:** protección de asociaciones y modificaciones manuales durante dictados consecutivos.
+- **A12:** configuración y ejecución reproducible de las pruebas frontend.
+
+Las correcciones fueron autorizadas para desarrollarse en una rama independiente, manteniendo la revisión humana antes de su integración.
+
+### 2.2. Evolución de las pruebas automatizadas
+
+Los resultados históricos permiten observar cómo aumentó la cobertura de escenarios de prueba durante el desarrollo.
+
+| Ejecución | Backend | Frontend | Total aprobado |
+|---|---:|---:|---:|
+| Auditoría inicial | 33/33 | No ejecutadas | 33 |
+| Primera corrección A01–A04 y A12 | 52/52 | 32/32 | 84 |
+| Revisión posterior A02/A04 | 52/52 | 40/40 | 92 |
+| Revisión posterior A03 | 72/72 | 40/40 | 112 |
+| **Corrección final HU16** | **114/114** | **40/40** | **154** |
+
+**Resultado de la última ejecución reportada: 154 pruebas automatizadas aprobadas, sin pruebas fallidas.**
+
+Es importante aclarar que estas cifras corresponden a ejecuciones sucesivas de las suites. Los resultados de las diferentes etapas **no deben sumarse entre sí**, porque las ejecuciones posteriores incluyen los casos conservados de las versiones anteriores.
+
+Durante la primera corrección se incorporaron 19 casos backend y 14 frontend. Posteriormente, la revisión A03 añadió 20 pruebas backend y la corrección final de HU16 incorporó otras 42.
+
+También se realizaron verificaciones de compilación, TypeScript estricto y consistencia de los cambios.
+
+Las pruebas automatizadas utilizaron servicios externos y persistencia simulados. La comprobación nativa del micrófono se realizó mediante Chromium con una entrada de audio simulada.
+
+Por lo tanto, estos resultados permiten verificar el comportamiento del código bajo condiciones controladas, pero **no demuestran por sí solos el funcionamiento integral de AssemblyAI, ElevenLabs y MongoDB Atlas en producción**.
+
+### 2.3. Corrección final de HU16
+
+Durante las pruebas manuales con AssemblyAI real se identificó una limitación en la interpretación de instrucciones de asignación expresadas mediante lenguaje natural.
+
+Por ejemplo, el sistema transcribía correctamente:
+
+`Asigna a Juan equipo PC001.`
+
+Sin embargo, la lógica de interpretación no identificaba automáticamente al técnico ni al equipo.
+
+El análisis permitió establecer que el problema se encontraba en el parser de TechTrack y no en el reconocimiento de voz de AssemblyAI.
+
+El equipo solicitó a Codex una corrección específica para reconocer expresiones naturales sin depender exclusivamente de la puntuación, conservando las protecciones frente a asignaciones ambiguas.
+
+La corrección incluyó:
+
+- Reconocimiento de expresiones como «Asigna a Juan el equipo PC001».
+- Identificación del técnico antes de buscar sus equipos asociados.
+- Interpretación de instrucciones sin exigir puntuación entre todos los campos.
+- Selección manual cuando existen técnicos con nombres iguales o instrucciones ambiguas.
+- Protección frente a negaciones e instrucciones contradictorias.
+- Conservación de la confirmación humana antes del guardado.
+
+Se añadieron **42 pruebas backend de regresión** para verificar estas situaciones.
+
+La última validación reportada obtuvo:
+
+| Verificación | Resultado |
+|---|---|
+| Pruebas backend | **114/114 aprobadas** |
+| Pruebas frontend | **40/40 aprobadas** |
+| Builds backend y frontend | Aprobados |
+| TypeScript estricto | Sin errores |
+| `git diff --check` | Sin errores |
+| Revisión de archivos sensibles | Sin hallazgos en los cambios publicados |
+
+Esta corrección se incorporó posteriormente a la rama principal mediante el PR #4.
+
+### 2.4. Pruebas manuales y validación funcional
+
+Además de las pruebas automatizadas, el equipo reportó verificaciones manuales en localhost con las funcionalidades de reconocimiento y síntesis de voz.
+
+Las pruebas incluyeron dictado de información, creación de borradores, asignaciones administrativas, documentación técnica y reproducción hablada.
+
+Durante las pruebas se presentó una respuesta HTTP `422`, que el equipo relacionó con un micrófono que registraba silencio. Después de revisar la configuración del dispositivo de entrada, se reportó que la transcripción pudo realizarse correctamente.
+
+Esta situación permitió identificar una lección importante: **antes de atribuir un fallo al código, es necesario verificar también la configuración del entorno, los permisos y los dispositivos utilizados**.
+
+Las pruebas con AssemblyAI real también permitieron detectar el problema de interpretación de lenguaje natural que motivó la corrección final de HU16.
+
+El registro integral de estas verificaciones continúa pendiente de incorporarse al repositorio con sus capturas, resultados por historia y condiciones de ejecución.
+
+## 3. Aporte de la inteligencia artificial al desarrollo
+
+Durante el desarrollo de TechTrack se utilizaron diferentes herramientas de inteligencia artificial, cada una con una función específica.
 
 | Herramienta | Uso y resultado | Intervención humana (HITL) |
 |---|---|---|
-| **Claude** | Apoyó la creación de la base inicial de TechTrack y su estructura web. | El equipo definió el problema, las tecnologías y revisó el resultado. |
-| **AssemblyAI** | Convierte audio en español a texto; las reglas de TechTrack estructuran la transcripción. | El usuario revisa el borrador antes de guardarlo. |
-| **ElevenLabs** | Genera la lectura hablada de tareas y resúmenes; existe respaldo del navegador. | El equipo eligió el proveedor y conservó una alternativa ante fallos. |
-| **Codex — auditoría** | Revisó la versión de voz existente e identificó **14 hallazgos**, sin modificarla. | El equipo exigió primero un diagnóstico y analizó qué riesgos corregir. |
-| **Codex — corrección** | Reportó cambios para **A01, A02, A03, A04 y A12** y amplió las pruebas automatizadas. | El equipo autorizó explícitamente esos cinco cambios, en una rama separada y sin publicar. |
-| **ChatGPT** | Apoyó la organización de requisitos, planificación, revisión y documentación. | Las propuestas de prioridades, estimaciones y textos fueron revisables por el equipo. |
+| **Claude** | Apoyó la construcción inicial de la estructura del proyecto y sus componentes web. | El equipo definió el problema, las tecnologías y revisó las propuestas. |
+| **AssemblyAI** | Convierte audio en español a texto, que posteriormente interpreta la lógica de TechTrack. | El usuario revisa y corrige el borrador antes de guardarlo. |
+| **ElevenLabs** | Genera la lectura hablada de tareas y resúmenes. | El equipo seleccionó el proveedor y conservó una alternativa mediante la voz del navegador. |
+| **Codex — auditoría** | Identificó 14 hallazgos técnicos sin modificar el código. | El equipo evaluó los riesgos y seleccionó los hallazgos prioritarios. |
+| **Codex — correcciones** | Implementó las correcciones autorizadas, mejoró HU16 y amplió las pruebas automatizadas. | El equipo autorizó los cambios, realizó comprobaciones manuales y decidió su integración. |
+| **ChatGPT** | Apoyó el análisis de requisitos, la planificación, la revisión y la organización documental. | Las propuestas fueron revisadas y ajustadas por el equipo. |
 
-El proceso documentado fue **instrucción → respuesta de IA → evaluación humana → cambio autorizado → prueba → evidencia**. Se conservan los prompts originales disponibles de Claude y Codex; los prompts de referencia en las primeras etapas no se presentan como conversaciones literales. Las respuestas de Codex se resumieron para el informe principal y se conservó íntegra la auditoría como evidencia complementaria.
+### Proceso de trabajo con IA
 
-**No se calcularon** horas ahorradas, porcentaje de código generado por IA, cobertura porcentual de código ni precisión estadística de reconocimiento de voz: no existe una medición verificable para reportarlos.
+El procedimiento documentado puede resumirse de la siguiente manera:
+
+**Instrucción → respuesta de IA → evaluación humana → cambio autorizado → pruebas → evidencia → integración.**
+
+Este proceso permitió utilizar la inteligencia artificial como herramienta de apoyo sin delegar completamente las decisiones técnicas.
+
+Se conservaron los prompts originales disponibles de Claude y Codex, las respuestas de auditoría y los registros de decisiones Human-in-the-Loop (HITL).
+
+Los prompts de referencia utilizados para explicar algunas etapas se identificaron como tales y no se presentan como transcripciones literales de interacciones anteriores.
+
+### Limitaciones de la evaluación del aporte de IA
+
+No se calcularon métricas cuantitativas sobre:
+
+- Horas de desarrollo ahorradas.
+- Porcentaje de código generado por inteligencia artificial.
+- Cobertura porcentual de las pruebas.
+- Precisión estadística del reconocimiento de voz.
+- Reducción del tiempo de documentación técnica.
+
+Por lo tanto, el aporte de la IA se evalúa principalmente mediante las funcionalidades implementadas, los problemas identificados, las correcciones realizadas y las evidencias del proceso de desarrollo.
 
 ## 4. Evaluación del proceso frente al taller
 
-| Aspecto de la rúbrica | Evidencia | Estado documentado |
-|---|---|---|
-| Problema y objetivos | Necesidad de agilizar el registro técnico y ampliar el MVP1. | Definidos. |
-| Planificación y APIs | AssemblyAI, ElevenLabs y cinco HU complementarias. | Documentados; prioridades y SP sujetos a cotejo con Jira. |
-| Diseño de HU | HU13–HU17 en formato Connextra y criterios esenciales. | Documentados; aceptación oficial pendiente de verificar. |
-| Uso de IA | Prompts, respuestas, auditoría, correcciones y decisiones HITL. | Evidencia disponible y limitaciones señaladas. |
-| Desarrollo | Funciones de voz integradas al repositorio mediante PR #3. | Primera versión fusionada a `main`; correcciones posteriores en rama local. |
-| Presentación | Flujo completo reportado; demostración práctica prevista. | Falta adjuntar el registro del recorrido; la presentación no se califica aquí. |
+La documentación del MVP2 permite relacionar las actividades realizadas con los aspectos solicitados en el taller.
 
-Esta tabla **no equivale a una nota ni a la aprobación del docente**.
+| Aspecto | Evidencia disponible | Estado documentado |
+|---|---|---|
+| Problema y objetivos | Necesidad de facilitar el registro y la consulta de actividades técnicas mediante voz. | Definidos y documentados. |
+| Planificación y APIs | Cinco HU complementarias e integración de AssemblyAI y ElevenLabs. | Documentadas; prioridades y Story Points sujetos a validación en Jira. |
+| Diseño de historias de usuario | HU13–HU17 con criterios de aceptación. | Implementadas; aceptación formal según seguimiento en Jira. |
+| Uso de inteligencia artificial | Prompts originales, respuestas, auditoría, correcciones y decisiones HITL. | Evidencias organizadas por etapa. |
+| Desarrollo | Implementación de funciones de voz y correcciones técnicas mediante PR #3 y PR #4. | Ambas integraciones fusionadas a `main`. |
+| Pruebas | Auditoría, resultados automatizados y verificaciones manuales. | Última ejecución reportada: 154 pruebas aprobadas; registro integral manual pendiente. |
+| Despliegue | Vercel, MongoDB Atlas y control de versiones mediante GitHub. | PR #4 fusionado y verificaciones de Vercel exitosas. |
+| Presentación | Demostración funcional y explicación de HU en Jira. | El registro documental de la demostración debe incorporarse como evidencia. |
+
+Esta evaluación describe las evidencias disponibles y **no constituye una calificación ni una aprobación emitida por el docente**.
 
 ## 5. Estado de despliegue, límites y pendientes
 
-La primera integración de voz fue incorporada a `main` mediante el PR #3. El MVP2 reutiliza **Vercel y MongoDB Atlas**, agregando las claves de AssemblyAI y ElevenLabs únicamente en el backend.
+### 5.1. Integración al repositorio principal
 
-La **segunda versión de correcciones**, según la respuesta conservada de Codex, permaneció en `fix/mvp2-voz-estabilidad`, basada en `92abf9d`, **sin commit, push, merge ni nuevo despliegue**. Por ello no debe afirmarse que la versión pública incorpora esas correcciones.
+La primera versión de las funcionalidades de voz se integró a `main` mediante el **Pull Request #3**.
 
-**Pendientes principales:**
+Posteriormente, las correcciones derivadas de la auditoría y el ajuste final de HU16 se desarrollaron en la rama:
 
-- Revisar los **nueve hallazgos no incluidos** en la corrección priorizada: A05–A11, A13 y A14; no se consideran automáticamente resueltos.
-- Confirmar en Jira los identificadores, criterios, estados, prioridades y Story Points oficiales de HU13–HU17. Las **21 SP de planificación son propuestas**, no velocidad ni avance certificado.
-- Verificar la versión exacta publicada, la regresión completa con credenciales autorizadas y los casos límite de grabaciones, tareas largas, errores de proveedores y diferentes navegadores.
-- Medir en una evaluación posterior la utilidad, comprensión del dictado y tiempo de documentación con usuarios reales.
+`fix/mvp2-voz-estabilidad`
+
+La última corrección se publicó mediante el commit:
+
+`021d185` — `fix: mejorar interpretación de asignaciones por voz`
+
+Una vez completadas las verificaciones y autorizada la integración, se fusionó el **Pull Request #4**.
+
+- **Repositorio:** https://github.com/flowxter/tech-track
+- **Pull Request:** https://github.com/flowxter/tech-track/pull/4
+- **Estado:** fusionado y cerrado.
+- **Commit de integración:** `040287d`
+- **Rama de destino:** `main`.
+- **Fecha de integración:** 9 de noviembre de 2026, hora de Colombia.
+
+De esta manera, las correcciones de estabilidad, las pruebas de regresión y la documentación del MVP2 quedaron incorporadas al repositorio principal.
+
+Después del merge, las verificaciones de Vercel asociadas al commit de integración finalizaron satisfactoriamente.
+
+Sin embargo, estos resultados no reemplazan una prueba funcional integral de la versión publicada.
+
+### 5.2. Aspectos pendientes
+
+Aunque se alcanzaron los objetivos funcionales en los escenarios probados, se identifican actividades para futuros incrementos:
+
+- **Hallazgos pendientes:** revisar los nueve hallazgos no incluidos en la corrección priorizada: A05–A11, A13 y A14. No se consideran automáticamente resueltos.
+- **Aceptación en Jira:** cotejar identificadores, criterios, estados, prioridades y Story Points oficiales de HU13–HU17. Los 21 Story Points documentados inicialmente fueron una propuesta de planificación.
+- **Evidencias manuales:** incorporar el registro integral de las pruebas realizadas, con capturas y resultados observados.
+- **Verificación de producción:** comprobar el flujo completo en la versión publicada, incluyendo autenticación, integración con proveedores, persistencia y permisos.
+- **Casos límite:** ampliar las pruebas con grabaciones extensas, errores de proveedores, navegadores diferentes y situaciones adicionales de ambigüedad.
+- **Evaluación con usuarios:** medir posteriormente la utilidad del dictado, la comprensión de las instrucciones y el tiempo empleado en documentar tareas.
+
+Estos pendientes representan oportunidades de mejora y no invalidan los resultados alcanzados en los escenarios que fueron probados.
 
 ## 6. Conclusión y decisión HITL
 
-TechTrack evolucionó a un **MVP2 funcional en los escenarios automatizados comprobados**, incorporando cinco capacidades de voz sin reemplazar el sistema existente. La auditoría añadió valor al identificar problemas que una demostración aislada no revelaba; la corrección autorizada y las pruebas automatizadas aportaron resultados reproducibles. La experiencia práctica reportada destaca la importancia de verificar el entorno, aunque su registro integral sigue pendiente.
+TechTrack evolucionó desde un sistema de gestión y trazabilidad de soporte técnico hacia un **MVP2 que incorpora reconocimiento y síntesis de voz**, manteniendo las funcionalidades fundamentales del producto.
 
-**La aceptación final del MVP2 y la publicación de las correcciones corresponden al equipo**, no a Claude, Codex ni a los resultados de pruebas simuladas.
+La auditoría realizada con Codex permitió identificar problemas técnicos que no necesariamente eran visibles durante una demostración funcional.
+
+Posteriormente, las correcciones autorizadas y las pruebas de regresión mejoraron la estabilidad del sistema. Las verificaciones manuales con AssemblyAI real complementaron este proceso y permitieron detectar una limitación adicional en la interpretación de instrucciones naturales.
+
+La última ejecución automatizada reportó **114 pruebas backend y 40 frontend aprobadas**, para un total de **154 pruebas satisfactorias**.
+
+Finalmente, los cambios fueron integrados a `main` mediante el PR #4, conservando la trazabilidad de las correcciones, los commits y los resultados de validación.
+
+**La principal conclusión del MVP2 es que la inteligencia artificial puede apoyar las diferentes etapas de la ingeniería de software, desde el desarrollo hasta la auditoría y las pruebas, pero la calidad del producto depende de la revisión humana, la validación técnica y el control de las decisiones.**
+
+La aceptación de las funcionalidades y la autorización de los cambios permanecieron bajo responsabilidad del equipo, en concordancia con el enfoque **Human-in-the-Loop (HITL)**.
